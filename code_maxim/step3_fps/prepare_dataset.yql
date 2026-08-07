@@ -1,0 +1,68 @@
+USE kolmogorov;
+
+PRAGMA yt.Pool = "ads-research";
+PRAGMA yt.TemporaryCompressionCodec = "zstd_3";
+PRAGMA yt.PublishedCompressionCodec = "zstd_3";
+PRAGMA yt.UseNativeYtTypes;
+
+$input = "//home/bm/users/argus/mla/data/train_100m";
+$output = "//home/bm/users/argus/mla/steps/step3_fps/train_100m";
+
+$find_tokens = Re2::FindAndConsume(@@([0-9a-zа-яё]+)@@);
+$tokenize = ($text, $limit) -> {
+    $normalized = Unicode::ReplaceAll(
+        Unicode::ToLower(
+            Unicode::NormalizeNFKC(
+                CAST(COALESCE($text, "") AS Utf8)
+            )
+        ),
+        "ё"u,
+        "е"u
+    );
+    RETURN ListTake(
+        ListUniq($find_tokens(CAST($normalized AS String))),
+        $limit
+    );
+};
+
+$bucket = ($feature) -> {
+    $digest = Digest::Md5Raw($feature);
+    RETURN
+        CAST(ByteAt($digest, 0) AS Uint32)
+        + 256u * CAST(ByteAt($digest, 1) AS Uint32);
+};
+
+$hash_tokens = ($tokens, $prefix) -> {
+    RETURN ListMap(
+        $tokens,
+        ($token) -> {
+            RETURN $bucket($prefix || $token);
+        }
+    );
+};
+
+-- Only clicked query-banner pairs are needed. All negatives are sampled from
+-- the other 511 clicked banners in the same training batch.
+INSERT INTO $output WITH TRUNCATE
+SELECT
+    ListExtend(
+        $hash_tokens($tokenize(SearchQuery, 32), "query:"),
+        AsList(
+            $bucket(
+                "region:" || CAST(COALESCE(RegionID, 0) AS String)
+            )
+        )
+    ) AS query_features,
+    ListExtend(
+        AsList(
+            $bucket("banner_id:" || CAST(BannerID AS String))
+        ),
+        $hash_tokens($tokenize(BannerTitle, 32), "title:"),
+        $hash_tokens($tokenize(BannerText, 64), "text:")
+    ) AS banner_features
+FROM $input
+WHERE
+    COALESCE(IsClick, 0) > 0
+    AND BannerID IS NOT NULL
+    AND SearchQuery IS NOT NULL
+    AND SearchQuery != "";

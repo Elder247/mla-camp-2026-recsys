@@ -10,6 +10,7 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 from mla_recsys.pipeline import MultiGeneratorPipeline  # noqa: E402
+from mla_recsys.ranker import load_ranker, rerank  # noqa: E402
 
 SOLUTION_NAME = "mla_two_stage_rrf"
 
@@ -31,7 +32,16 @@ def load_model(artifact_dir: Path) -> dict[str, Any]:
     if not config_path.is_file():
         config_path = REPOSITORY_ROOT / "configs" / "baselines.json"
     pipeline = MultiGeneratorPipeline.from_config(config_path)
-    return {"pipeline": pipeline, "metadata": {"solution": SOLUTION_NAME, "config": str(config_path)}}
+    ranker = load_ranker(artifact_dir)
+    return {
+        "pipeline": pipeline,
+        "ranker": ranker,
+        "metadata": {
+            "solution": SOLUTION_NAME,
+            "config": str(config_path),
+            "ranker": ranker is not None,
+        },
+    }
 
 
 def rank(
@@ -42,5 +52,11 @@ def rank(
     top_k: int,
 ) -> list[dict[str, Any]]:
     del features
-    return model["pipeline"].rank(example, top_k)
-
+    pipeline = model["pipeline"]
+    ranker = model.get("ranker")
+    if ranker is None:
+        return pipeline.rank(example, top_k)
+    rankings = pipeline.source_rankings(example)
+    candidate_pool = int(ranker["metadata"].get("candidate_pool", 1000))
+    candidates = pipeline.fuse(rankings, max_candidates=max(top_k, candidate_pool))
+    return rerank(ranker, example, candidates)[:top_k]

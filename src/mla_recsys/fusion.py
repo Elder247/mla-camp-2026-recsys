@@ -66,6 +66,7 @@ def fuse_rankings(
                 "rank": source_rank,
                 "reciprocal_rank": 1.0 / source_rank,
                 "score": float(raw_score) if raw_score is not None else None,
+                "contributions": deepcopy(raw_candidate.get("contributions")),
             }
             item["rrf_score"] += weight / (rrf_constant + source_rank)
 
@@ -91,4 +92,3 @@ def fuse_rankings(
         )
     )
     return fused[:max_candidates]
-

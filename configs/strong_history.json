@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "generators": [
+    {
+      "name": "tfidf",
+      "code": "/home/astrofimuk/workspace/tfidf_step1/step1_tfidf/inference.py",
+      "artifact_dir": "/home/astrofimuk/workspace/tfidf_step1/data/artifacts/step1_tfidf",
+      "python_paths": [
+        "/home/astrofimuk/workspace/tfidf_step1"
+      ],
+      "top_k": 1000,
+      "quota": 1000,
+      "weight": 0.75,
+      "features": {}
+    },
+    {
+      "name": "two_tower_fps",
+      "code": "/home/astrofimuk/workspace/mla_two_stage/code_maxim/step3_fps/inference.py",
+      "artifact_dir": "/home/astrofimuk/workspace/mla_two_stage/artifacts/step3_fps",
+      "python_paths": [
+        "/home/astrofimuk/workspace/mla_two_stage",
+        "/home/astrofimuk/workspace/step2_ce"
+      ],
+      "top_k": 1000,
+      "quota": 1000,
+      "weight": 1.25,
+      "features": {}
+    },
+    {
+      "name": "history",
+      "code": "/home/astrofimuk/workspace/mla_two_stage/generators/history.py",
+      "artifact_dir": "/home/astrofimuk/workspace/mla_two_stage/artifacts/history",
+      "python_paths": [
+        "/home/astrofimuk/workspace/mla_two_stage",
+        "/home/astrofimuk/workspace/step2_ce"
+      ],
+      "top_k": 200,
+      "quota": 200,
+      "weight": 2.0,
+      "features": {}
+    }
+  ],
+  "fusion": {
+    "rrf_constant": 60.0,
+    "max_candidates": 2200
+  }
+}

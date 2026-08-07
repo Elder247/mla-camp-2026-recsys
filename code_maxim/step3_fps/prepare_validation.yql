@@ -1,0 +1,96 @@
+USE kolmogorov;
+
+PRAGMA yt.Pool = "ads-research";
+PRAGMA yt.TemporaryCompressionCodec = "zstd_3";
+PRAGMA yt.PublishedCompressionCodec = "zstd_3";
+PRAGMA yt.UseNativeYtTypes;
+
+$input = "//home/bm/users/argus/mla/data/val";
+$output = "//home/bm/users/argus/mla/steps/step3_fps/val_clicks_2k";
+
+$find_tokens = Re2::FindAndConsume(@@([0-9a-zа-яё]+)@@);
+$tokenize = ($text, $limit) -> {
+    $normalized = Unicode::ReplaceAll(
+        Unicode::ToLower(
+            Unicode::NormalizeNFKC(
+                CAST(COALESCE($text, "") AS Utf8)
+            )
+        ),
+        "ё"u,
+        "е"u
+    );
+    RETURN ListTake(
+        ListUniq($find_tokens(CAST($normalized AS String))),
+        $limit
+    );
+};
+
+$bucket = ($feature) -> {
+    $digest = Digest::Md5Raw($feature);
+    RETURN
+        CAST(ByteAt($digest, 0) AS Uint32)
+        + 256u * CAST(ByteAt($digest, 1) AS Uint32);
+};
+
+$sample_hash = ($feature) -> {
+    $digest = Digest::Md5Raw($feature);
+    RETURN
+        CAST(ByteAt($digest, 0) AS Uint64)
+        + 256ul * CAST(ByteAt($digest, 1) AS Uint64)
+        + 65536ul * CAST(ByteAt($digest, 2) AS Uint64)
+        + 16777216ul * CAST(ByteAt($digest, 3) AS Uint64);
+};
+
+$hash_tokens = ($tokens, $prefix) -> {
+    RETURN ListMap(
+        $tokens,
+        ($token) -> {
+            RETURN $bucket($prefix || $token);
+        }
+    );
+};
+
+$clicks = (
+    SELECT
+        BannerID,
+        BannerTitle,
+        BannerText,
+        SearchQuery,
+        RegionID,
+        $sample_hash(
+            CAST(COALESCE(UniqID, 0ul) AS String)
+            || ":"
+            || CAST(COALESCE(BannerID, 0) AS String)
+            || ":"
+            || CAST(COALESCE(ShowTime, 0ul) AS String)
+        ) AS sample_hash
+    FROM $input
+    WHERE
+        COALESCE(IsClick, 0) > 0
+        AND BannerID IS NOT NULL
+        AND SearchQuery IS NOT NULL
+        AND SearchQuery != ""
+);
+
+-- A deterministic pseudo-random sample makes validation curves comparable
+-- between runs while avoiding any local scan of the 206M-row val table.
+INSERT INTO $output WITH TRUNCATE
+SELECT
+    ListExtend(
+        $hash_tokens($tokenize(SearchQuery, 32), "query:"),
+        AsList(
+            $bucket(
+                "region:" || CAST(COALESCE(RegionID, 0) AS String)
+            )
+        )
+    ) AS query_features,
+    ListExtend(
+        AsList(
+            $bucket("banner_id:" || CAST(BannerID AS String))
+        ),
+        $hash_tokens($tokenize(BannerTitle, 32), "title:"),
+        $hash_tokens($tokenize(BannerText, 64), "text:")
+    ) AS banner_features
+FROM $clicks
+ORDER BY sample_hash
+LIMIT 2000;
