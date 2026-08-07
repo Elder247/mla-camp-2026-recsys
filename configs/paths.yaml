@@ -1,0 +1,18 @@
+paths:
+  root: /home/astrofimuk/workspace/mla_two_stage
+  runs: ${paths.root}/runs
+  cache: ${paths.root}/cache
+  immutable_artifacts: ${paths.root}/artifacts
+  python: /home/astrofimuk/workspace/step2_ce/.venv/bin/python
+  common_root: /home/astrofimuk/workspace/step2_ce/common
+  val_clicks: /home/astrofimuk/workspace/tfidf_step1/data/val_clicks.parquet
+  test_clicks: /home/astrofimuk/workspace/tfidf_step1/data/test_clicks.parquet
+  banner_index: /home/astrofimuk/workspace/tfidf_step1/data/index_1m.parquet
+  token_stats: /home/astrofimuk/workspace/tfidf_step1/data/step1_token_stats.parquet
+  tfidf_code: /home/astrofimuk/workspace/tfidf_step1/step1_tfidf/inference.py
+  tfidf_artifact: /home/astrofimuk/workspace/tfidf_step1/data/artifacts/step1_tfidf
+  step3_code: ${paths.root}/code_maxim/step3_fps/inference.py
+  step3_artifact: ${paths.immutable_artifacts}/step3_fps
+  history_code: ${paths.root}/generators/history.py
+  history_artifact: ${paths.immutable_artifacts}/history
+

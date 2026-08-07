@@ -1,0 +1,36 @@
+experiment:
+  name: i0_reproduce
+  description: Frozen three-source baseline under temporal/natural-pool contract
+
+candidates:
+  generators:
+    tfidf_v1:
+      enabled: true
+      code_path_key: tfidf_code
+      artifact_path_key: tfidf_artifact
+      quota: 1000
+      top_k: 1000
+      weight: 0.75
+    two_tower_fps_v1:
+      enabled: true
+      code_path_key: step3_code
+      artifact_path_key: step3_artifact
+      quota: 1000
+      top_k: 1000
+      weight: 1.25
+    history_legacy_v1:
+      enabled: true
+      code_path_key: history_code
+      artifact_path_key: history_artifact
+      quota: 200
+      top_k: 200
+      weight: 2.0
+
+features:
+  version: baseline_37_v1
+  enabled:
+    - retrieval_v1
+    - text_overlap_v1
+    - source_cost_log_v1
+    - legacy_history_v1
+

@@ -1,0 +1,15 @@
+---
+description: ML Camp RecSys architecture and leakage rules
+alwaysApply: true
+---
+
+Follow `docs/requirements.md`, `docs/arch-rules.md`, `docs/architecture.md`,
+`docs/commands.md` and `docs/plan.md` before changing code.
+
+The source-of-truth plan is
+`/Users/astrofimuk/REPS/mla_camp_recsys/docs/next_iterations_plan.md`.
+
+Do not refactor `common/`, inject positives into candidate pools, use non-temporal
+model-selection splits, mix offline/full artifacts, hardcode experiment values,
+or reuse a cache without matching fingerprints and schema validation.
+

@@ -5,8 +5,9 @@ __pycache__/
 data/
 artifacts/
 run/
+runs/
+cache/
 *.parquet
 *.npy
 *.pt
 *.cbm
-

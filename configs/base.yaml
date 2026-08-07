@@ -1,0 +1,59 @@
+project:
+  name: mla_two_stage
+  seed: 2026
+
+runtime:
+  run_id: null
+  scope: offline
+  mode: offline
+  resume: true
+  artifact_version: run_contract_v1
+
+pipeline:
+  max_parallel_cg: 1
+  stages:
+    - {name: prepare_data, script: prepare_data.py, modes: [smoke, offline, full]}
+    - {name: prepare_counters, script: prepare_counters.py, modes: [smoke, offline, full]}
+    - {name: generate_candidates, script: generate_candidates.py, modes: [smoke, offline, full]}
+    - {name: merge_candidates, script: merge_candidates.py, modes: [smoke, offline, full]}
+    - {name: build_features, script: build_features.py, modes: [smoke, offline, full]}
+    - {name: train_ranker, script: train_ranker.py, modes: [smoke, offline, full]}
+    - {name: evaluate_run, script: evaluate_run.py, modes: [smoke, offline]}
+    - {name: make_submission, script: make_submission.py, modes: [full]}
+    - {name: validate_submission, script: validate_submission.py, modes: [full]}
+
+data:
+  partition_count: 32
+  feature_chunk_rows: 250000
+  smoke_requests: 20
+
+candidates:
+  rrf_constant: 60.0
+  union_max_candidates: 2200
+  ranker_pool: 500
+  tie_break: banner_id_asc
+  generators: {}
+
+features:
+  version: feature_v1
+  enabled: []
+
+ranker:
+  version: catboost_logsc_baseline_v1
+  kind: ranker_logsc
+  loss_function: YetiRankPairwise
+  eval_metric: NDCG:top=50
+  task_type: GPU
+  devices: "0"
+  iterations: 600
+  depth: 8
+  learning_rate: 0.07
+  l2_leaf_reg: 5.0
+  early_stopping_rounds: 75
+  random_seed: ${project.seed}
+
+evaluation:
+  cutoffs: [1, 5, 10, 20, 50, 100, 500, 1000]
+  primary_metric: sourcecost_recall@50
+  submission_top_k: 50
+

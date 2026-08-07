@@ -1,0 +1,24 @@
+split:
+  version: temporal_val_v1
+  time_column: ShowTime
+  request_column: SearchReqId
+  hitlog_column: HitLogID
+  fit:
+    start_inclusive: 1781643786
+    end_exclusive: 1782056217
+  holdout:
+    start_inclusive: 1782056217
+    end_inclusive: 1782248325
+  observed:
+    rows: 10000
+    request_groups: 9999
+    fit_request_groups: 6499
+    holdout_request_groups: 3500
+  counters:
+    offline:
+      cutoff_ts: 1781643786
+      sources: [train_100m]
+    full:
+      cutoff_ts: 1782248326
+      sources: [train_100m, val_clicks]
+

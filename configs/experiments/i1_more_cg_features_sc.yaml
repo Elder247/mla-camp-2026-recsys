@@ -1,0 +1,35 @@
+experiment:
+  name: i1_more_cg_features_sc
+  description: Independent history/popularity CGs, feature v2 and SC-aware CatBoost
+
+candidates:
+  union_max_candidates: 4000
+  ranker_pool: 1000
+  generators:
+    tfidf_v1: {enabled: true, code_path_key: tfidf_code, artifact_path_key: tfidf_artifact, quota: 1000, top_k: 1000, weight: 0.75}
+    two_tower_fps_v1: {enabled: true, code_path_key: step3_code, artifact_path_key: step3_artifact, quota: 1000, top_k: 1000, weight: 1.25}
+    history_query_click_v1: {enabled: true, quota: 250, top_k: 250, weight: 1.0}
+    history_query_sc_v1: {enabled: true, quota: 250, top_k: 250, weight: 1.0}
+    history_query_region_v1: {enabled: true, quota: 150, top_k: 150, weight: 1.0}
+    history_user_v1: {enabled: true, quota: 200, top_k: 200, weight: 1.0}
+    region_pop_sc_v1: {enabled: true, quota: 150, top_k: 150, weight: 1.0, min_clicks: 2, bayes_prior: 20.0}
+    global_pop_sc_v1: {enabled: true, quota: 75, top_k: 75, weight: 1.0, min_clicks: 2, bayes_prior: 20.0}
+
+features:
+  version: feature_v2
+  enabled:
+    - retrieval_provenance_v2
+    - request_context_v2
+    - candidate_static_v2
+    - text_match_v2
+    - weekly_counters_v1
+    - cross_features_v1
+
+ranker:
+  version: catboost_raw_sc_v1
+  kind: ranker_raw_sc_label
+  iterations: 1500
+  depth: 8
+  learning_rate: 0.04
+  l2_leaf_reg: 7.0
+
