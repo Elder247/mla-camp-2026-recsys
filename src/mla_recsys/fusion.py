@@ -45,6 +45,9 @@ def fuse_rankings(
         seen_in_source: set[int] = set()
         accepted = 0
         for source_rank, raw_candidate in enumerate(candidates, start=1):
+            effective_rank = int(raw_candidate.get("_source_rank", source_rank))
+            if effective_rank <= 0:
+                raise ValueError(f"Invalid source rank for {source}: {effective_rank}")
             banner_id = _candidate_id(raw_candidate)
             if banner_id in seen_in_source:
                 continue
@@ -63,12 +66,12 @@ def fuse_rankings(
 
             raw_score = raw_candidate.get("score")
             item["retrieval"][source] = {
-                "rank": source_rank,
-                "reciprocal_rank": 1.0 / source_rank,
+                "rank": effective_rank,
+                "reciprocal_rank": 1.0 / effective_rank,
                 "score": float(raw_score) if raw_score is not None else None,
                 "contributions": deepcopy(raw_candidate.get("contributions")),
             }
-            item["rrf_score"] += weight / (rrf_constant + source_rank)
+            item["rrf_score"] += weight / (rrf_constant + effective_rank)
 
     fused = list(merged.values())
     for item in fused:

@@ -47,7 +47,15 @@ class FusionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             fuse_rankings({"x": []}, max_candidates=0)
 
+    def test_cached_source_rank_is_preserved(self) -> None:
+        result = fuse_rankings(
+            {"source": [{"banner_id": 7, "score": 1.0, "_source_rank": 3}]},
+            rrf_constant=10.0,
+            max_candidates=10,
+        )
+        self.assertEqual(result[0]["retrieval"]["source"]["rank"], 3)
+        self.assertAlmostEqual(result[0]["rrf_score"], 1.0 / 13.0)
+
 
 if __name__ == "__main__":
     unittest.main()
-

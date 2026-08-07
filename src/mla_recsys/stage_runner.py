@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import resource
+import re
 import subprocess
 import sys
 import time
@@ -32,13 +33,17 @@ class StageRunner:
         if not command:
             raise ValueError("Stage command cannot be empty")
         log_path = self.store.path / "logs" / f"{stage}.log"
+        time_path = self.store.path / "logs" / f"{stage}.time"
         started_at = utc_now()
         started = time.monotonic()
         before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
         rendered_command = [mask_secrets(item) for item in command]
+        actual_command = list(command)
+        if sys.platform != "darwin" and Path("/usr/bin/time").is_file():
+            actual_command = ["/usr/bin/time", "-v", "-o", str(time_path), *command]
         with log_path.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
-                list(command),
+                actual_command,
                 cwd=cwd,
                 env=dict(env) if env is not None else None,
                 stdout=subprocess.PIPE,
@@ -56,13 +61,20 @@ class StageRunner:
                         print(line, end="", flush=True)
             return_code = process.wait()
         after = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        peak_rss_bytes = _rss_bytes(max(before, after))
+        if time_path.is_file():
+            rendered_time = time_path.read_text(encoding="utf-8", errors="replace")
+            match = re.search(r"Maximum resident set size \(kbytes\):\s*(\d+)", rendered_time)
+            if match:
+                peak_rss_bytes = int(match.group(1)) * 1024
         value: dict[str, object] = {
             "stage": stage,
             "status": "completed" if return_code == 0 else "failed",
             "started_at": started_at,
             "finished_at": utc_now(),
             "wall_seconds": round(time.monotonic() - started, 6),
-            "peak_rss_bytes": _rss_bytes(max(before, after)),
+            "peak_rss_bytes": peak_rss_bytes,
+            "peak_gpu_memory_bytes": None,
             "return_code": return_code,
             "command": rendered_command,
             "log": str(log_path),

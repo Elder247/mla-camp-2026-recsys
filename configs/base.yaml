@@ -16,6 +16,7 @@ pipeline:
     - {name: prepare_counters, script: prepare_counters.py, modes: [smoke, offline, full]}
     - {name: generate_candidates, script: generate_candidates.py, modes: [smoke, offline, full]}
     - {name: merge_candidates, script: merge_candidates.py, modes: [smoke, offline, full]}
+    - {name: validate_cache_parity, script: validate_cache_parity.py, modes: [smoke]}
     - {name: build_features, script: build_features.py, modes: [smoke, offline, full]}
     - {name: train_ranker, script: train_ranker.py, modes: [smoke, offline, full]}
     - {name: evaluate_run, script: evaluate_run.py, modes: [smoke, offline]}
@@ -25,7 +26,9 @@ pipeline:
 data:
   partition_count: 32
   feature_chunk_rows: 250000
-  smoke_requests: 20
+  candidate_buffer_rows: 20000
+  smoke_requests_per_split: 20
+  request_schema_version: requests_v1
 
 candidates:
   rrf_constant: 60.0
@@ -46,6 +49,7 @@ ranker:
   task_type: GPU
   devices: "0"
   iterations: 600
+  smoke_iterations: 30
   depth: 8
   learning_rate: 0.07
   l2_leaf_reg: 5.0
@@ -57,3 +61,6 @@ evaluation:
   primary_metric: sourcecost_recall@50
   submission_top_k: 50
 
+submission:
+  expected_requests: 10000
+  allow_fewer_than_top_k: false

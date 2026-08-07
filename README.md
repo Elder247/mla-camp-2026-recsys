@@ -113,3 +113,24 @@ RRF is deliberately only the first-stage fusion baseline. Candidate source
 ranks, scores and provenance are retained in every returned candidate. The
 next milestone uses this exact inference-time candidate distribution to build
 simple cross-source features and train the CatBoost ranker.
+
+## Configured temporal pipeline
+
+The reproducible pipeline now lives under `configs/`, `src/mla_recsys/` and
+`scripts/`. It keeps the three baseline generators frozen but adds a fixed
+6,499/3,500 temporal split, 32-partition source/merged parquet caches, a shared
+natural candidate pool for fit and inference, atomic run manifests, feature
+importance, SourceCost-aware evaluation and strict submission validation.
+
+```bash
+PY=/home/astrofimuk/workspace/step2_ce/.venv/bin/python
+$PY -m pytest tests -q
+$PY scripts/run_pipeline.py experiment=i0_reproduce \
+  run_id=20260807_2330_i0_smoke_repeat mode=smoke
+$PY scripts/run_pipeline.py experiment=i0_reproduce \
+  run_id=<YYYYMMDD_HHMM_name> mode=offline
+```
+
+Each stage is a separate subprocess and writes under `runs/<run_id>/`; legacy
+`run.sh` remains only for frozen-artifact parity. See `docs/requirements.md`,
+`docs/architecture.md` and `docs/commands.md` before changing the pipeline.

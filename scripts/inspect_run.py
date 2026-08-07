@@ -31,6 +31,8 @@ def main() -> int:
         "git": manifest.get("git"),
         "compute": manifest.get("compute"),
         "stages": result.get("stages"),
+        "primary_metric": result.get("primary_metric"),
+        "submission_validation": result.get("submission_validation"),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

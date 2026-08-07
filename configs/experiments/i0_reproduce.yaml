@@ -6,22 +6,28 @@ candidates:
   generators:
     tfidf_v1:
       enabled: true
+      feature_name: tfidf
       code_path_key: tfidf_code
       artifact_path_key: tfidf_artifact
+      python_path_keys: [tfidf_root]
       quota: 1000
       top_k: 1000
       weight: 0.75
     two_tower_fps_v1:
       enabled: true
+      feature_name: two_tower_fps
       code_path_key: step3_code
       artifact_path_key: step3_artifact
+      python_path_keys: [root, step2_root]
       quota: 1000
       top_k: 1000
       weight: 1.25
     history_legacy_v1:
       enabled: true
+      feature_name: history
       code_path_key: history_code
       artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
       quota: 200
       top_k: 200
       weight: 2.0
@@ -33,4 +39,3 @@ features:
     - text_overlap_v1
     - source_cost_log_v1
     - legacy_history_v1
-

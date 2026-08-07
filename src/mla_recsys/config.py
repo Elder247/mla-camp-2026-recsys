@@ -15,18 +15,21 @@ RUN_ID_RE = re.compile(r"^[0-9]{8}_[0-9]{4}_[a-z0-9][a-z0-9_-]{0,47}$")
 RESERVED_CLI_KEYS = {"experiment", "run_id", "mode", "scope", "resume"}
 
 
-def parse_cli_dotlist(values: Iterable[str]) -> tuple[dict[str, str], list[str]]:
+def parse_cli_dotlist(
+    values: Iterable[str], *, extra_runtime_keys: Iterable[str] = ()
+) -> tuple[dict[str, str], list[str]]:
     """Split Hydra-like ``key=value`` arguments into runtime keys and overrides."""
 
     runtime: dict[str, str] = {}
     overrides: list[str] = []
+    runtime_keys = RESERVED_CLI_KEYS | set(extra_runtime_keys)
     for value in values:
         if "=" not in value:
             raise ValueError(f"Expected key=value override, got: {value!r}")
         key, raw = value.split("=", 1)
         if not key:
             raise ValueError(f"Empty override key in: {value!r}")
-        if key in RESERVED_CLI_KEYS:
+        if key in runtime_keys:
             runtime[key] = raw
         else:
             overrides.append(value)
@@ -129,9 +132,8 @@ def config_fingerprint(cfg: DictConfig, *, include_runtime: bool = False) -> str
     value = to_plain_dict(cfg)
     if not include_runtime:
         runtime = dict(value.get("runtime") or {})
-        for key in ("run_id", "resume", "mode"):
+        for key in ("run_id", "resume"):
             runtime.pop(key, None)
         value["runtime"] = runtime
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-

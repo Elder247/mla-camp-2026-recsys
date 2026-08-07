@@ -52,7 +52,15 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(runtime["experiment"], "i0_reproduce")
         self.assertEqual(overrides, ["ranker.depth=7"])
 
+    def test_every_configured_stage_script_exists(self) -> None:
+        cfg = compose_config("i0_reproduce", mode="offline")
+        missing = [
+            str(stage.script)
+            for stage in cfg.pipeline.stages
+            if not (ROOT / "scripts" / str(stage.script)).is_file()
+        ]
+        self.assertEqual(missing, [])
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +53,25 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 def atomic_write_json(path: Path, value: Any) -> None:
     atomic_write_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+@contextmanager
+def atomic_output_path(path: Path):
+    """Yield a same-directory temporary path and atomically replace on success."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    os.close(fd)
+    temp_path = Path(temporary)
+    try:
+        yield temp_path
+        os.replace(temp_path, path)
+    except BaseException:
+        try:
+            temp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def fingerprint_file(path: Path, *, sample_bytes: int = 1 << 20) -> dict[str, Any]:

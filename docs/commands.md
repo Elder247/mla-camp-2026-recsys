@@ -33,7 +33,7 @@ python scripts/inspect_run.py runs/<id>
 ```bash
 python scripts/refit_full.py experiment=i1_more_cg_features_sc run_id=<id>
 python scripts/make_submission.py experiment=i1_more_cg_features_sc run_id=<id>
-python scripts/validate_submission.py runs/<id>/predictions/test_top50.parquet
+python scripts/validate_submission.py experiment=i1_more_cg_features_sc run_id=<id>
 ```
 
 The full orchestrator defaults to resume only when output manifests validate:
@@ -46,4 +46,3 @@ python scripts/run_pipeline.py experiment=i1_more_cg_features_sc run_id=<id> mod
 
 Legacy `./run.sh` commands remain available for frozen-baseline parity but are
 not the experiment contract.
-

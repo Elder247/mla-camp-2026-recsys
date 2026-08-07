@@ -21,7 +21,7 @@ def stage_commands(cfg: object) -> list[tuple[str, list[str]]]:
         if str(cfg.runtime.mode) not in [str(value) for value in stage.modes]:
             continue
         script = ROOT / "scripts" / str(stage.script)
-        command = [
+        base_command = [
             str(cfg.paths.python),
             str(script),
             f"experiment={cfg.experiment.name}",
@@ -29,7 +29,21 @@ def stage_commands(cfg: object) -> list[tuple[str, list[str]]]:
             f"mode={cfg.runtime.mode}",
             f"scope={cfg.runtime.scope}",
         ]
-        commands.append((str(stage.name), command))
+        name = str(stage.name)
+        if name == "generate_candidates":
+            splits = ["full_train", "test"] if str(cfg.runtime.mode) == "full" else ["train", "holdout"]
+            for split in splits:
+                for cg, item in cfg.candidates.generators.items():
+                    if bool(item.get("enabled", False)):
+                        commands.append(
+                            (f"generate_{split}_{cg}", [*base_command, f"split={split}", f"cg={cg}"])
+                        )
+        elif name in {"merge_candidates", "build_features"}:
+            splits = ["full_train", "test"] if str(cfg.runtime.mode) == "full" else ["train", "holdout"]
+            for split in splits:
+                commands.append((f"{name}_{split}", [*base_command, f"split={split}"]))
+        else:
+            commands.append((name, base_command))
     return commands
 
 
@@ -85,4 +99,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
