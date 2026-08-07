@@ -61,6 +61,13 @@ class ConfigTest(unittest.TestCase):
         ]
         self.assertEqual(missing, [])
 
+    def test_cache_parity_runs_in_every_pipeline_mode(self) -> None:
+        cfg = compose_config("i0_reproduce", mode="offline")
+        parity = next(
+            stage for stage in cfg.pipeline.stages if stage.name == "validate_cache_parity"
+        )
+        self.assertEqual(list(parity.modes), ["smoke", "offline", "full"])
+
 
 if __name__ == "__main__":
     unittest.main()

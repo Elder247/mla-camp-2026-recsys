@@ -17,12 +17,14 @@ from mla_recsys.data import read_request_parquet, request_example, stable_partit
 from mla_recsys.fusion import fuse_rankings  # noqa: E402
 
 
-def cached_top(run_path: Path, split: str, partition: int) -> dict[str, list[int]]:
+def cached_top(
+    run_path: Path, split: str, partition: int, *, top_k: int
+) -> dict[str, list[int]]:
     path = run_path / "candidates" / split / "merged" / f"part-{partition:05d}.parquet"
     rows = pq.read_table(
         path,
         columns=["request_id", "banner_id", "pre_rank"],
-        filters=[("pre_rank", "<=", 50)],
+        filters=[("pre_rank", "<=", top_k)],
     ).to_pylist()
     grouped: dict[str, list[tuple[int, int]]] = {}
     for row in rows:
@@ -36,10 +38,12 @@ def cached_top(run_path: Path, split: str, partition: int) -> dict[str, list[int
 
 
 def main() -> int:
-    context = load_stage_context("Validate cached and direct top-50 parity on smoke data")
+    context = load_stage_context("Validate sampled cached and direct retrieval parity")
     cfg = context.cfg
-    if str(cfg.runtime.mode) != "smoke":
-        raise ValueError("Cache parity command is intentionally smoke-only")
+    mode = str(cfg.runtime.mode)
+    splits = ("full_train", "test") if mode == "full" else ("train", "holdout")
+    requests_per_split = int(cfg.data.smoke_requests_per_split)
+    top_k = int(cfg.evaluation.submission_top_k)
     sources = enabled_sources(cfg)
     specs = {source: load_source(cfg, source) for source in sources}
     weights = {source: float(cfg.candidates.generators[source].weight) for source in sources}
@@ -47,14 +51,18 @@ def main() -> int:
     partitions = int(cfg.data.partition_count)
     mismatches = []
     checked = 0
-    for split in ("train", "holdout"):
+    checked_by_split: dict[str, int] = {}
+    for split in splits:
         cache_by_partition = {
-            partition: cached_top(context.store.path, split, partition)
+            partition: cached_top(
+                context.store.path, split, partition, top_k=top_k
+            )
             for partition in range(partitions)
         }
         requests = read_request_parquet(
             context.store.path / "data" / f"{split}_requests.parquet"
-        )
+        )[:requests_per_split]
+        checked_by_split[split] = len(requests)
         for request in requests:
             rankings = {
                 source: specs[source].generator.rank(request_example(request))
@@ -67,7 +75,7 @@ def main() -> int:
                 rrf_constant=float(cfg.candidates.rrf_constant),
                 max_candidates=int(cfg.candidates.union_max_candidates),
             )
-            direct_ids = [int(row["banner_id"]) for row in direct[:50]]
+            direct_ids = [int(row["banner_id"]) for row in direct[:top_k]]
             partition = stable_partition(str(request["request_id"]), partitions)
             cached_ids = cache_by_partition[partition].get(str(request["request_id"]), [])
             checked += 1
@@ -81,6 +89,10 @@ def main() -> int:
                     }
                 )
     report = {
+        "mode": mode,
+        "top_k": top_k,
+        "requests_per_split_limit": requests_per_split,
+        "checked_by_split": checked_by_split,
         "checked_requests": checked,
         "mismatch_count": len(mismatches),
         "mismatch_sample": mismatches[:5],
@@ -93,4 +105,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

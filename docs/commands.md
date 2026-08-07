@@ -21,6 +21,7 @@ python scripts/generate_candidates.py experiment=i0_reproduce run_id=<id> split=
 python scripts/generate_candidates.py experiment=i0_reproduce run_id=<id> split=holdout
 python scripts/merge_candidates.py experiment=i0_reproduce run_id=<id> split=train
 python scripts/merge_candidates.py experiment=i0_reproduce run_id=<id> split=holdout
+python scripts/validate_cache_parity.py experiment=i0_reproduce run_id=<id> mode=offline
 python scripts/build_features.py experiment=i0_reproduce run_id=<id> split=train
 python scripts/build_features.py experiment=i0_reproduce run_id=<id> split=holdout
 python scripts/train_ranker.py experiment=i0_reproduce run_id=<id>
@@ -31,15 +32,16 @@ python scripts/inspect_run.py runs/<id>
 ## Full refit and submission
 
 ```bash
-python scripts/refit_full.py experiment=i1_more_cg_features_sc run_id=<id>
-python scripts/make_submission.py experiment=i1_more_cg_features_sc run_id=<id>
-python scripts/validate_submission.py experiment=i1_more_cg_features_sc run_id=<id>
+python scripts/run_pipeline.py experiment=i0_reproduce run_id=<id> mode=full
+python scripts/make_submission.py experiment=i0_reproduce run_id=<id> mode=full scope=full
+python scripts/validate_submission.py experiment=i0_reproduce run_id=<id> mode=full scope=full
 ```
 
 The full orchestrator defaults to resume only when output manifests validate:
 
 ```bash
 python scripts/run_pipeline.py experiment=i0_reproduce run_id=<id> mode=offline
+python scripts/run_pipeline.py experiment=i0_reproduce run_id=<id> mode=full
 python scripts/run_pipeline.py experiment=i1_more_cg_features_sc run_id=<id> mode=offline
 python scripts/run_pipeline.py experiment=i1_more_cg_features_sc run_id=<id> mode=full
 ```

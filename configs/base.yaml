@@ -16,7 +16,7 @@ pipeline:
     - {name: prepare_counters, script: prepare_counters.py, modes: [smoke, offline, full]}
     - {name: generate_candidates, script: generate_candidates.py, modes: [smoke, offline, full]}
     - {name: merge_candidates, script: merge_candidates.py, modes: [smoke, offline, full]}
-    - {name: validate_cache_parity, script: validate_cache_parity.py, modes: [smoke]}
+    - {name: validate_cache_parity, script: validate_cache_parity.py, modes: [smoke, offline, full]}
     - {name: build_features, script: build_features.py, modes: [smoke, offline, full]}
     - {name: train_ranker, script: train_ranker.py, modes: [smoke, offline, full]}
     - {name: evaluate_run, script: evaluate_run.py, modes: [smoke, offline]}
