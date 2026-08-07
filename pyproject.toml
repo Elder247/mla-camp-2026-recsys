@@ -1,0 +1,9 @@
+[project]
+name = "mla-two-stage"
+version = "0.1.0"
+description = "Two-stage candidate generation and ranking for ML Camp"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+
