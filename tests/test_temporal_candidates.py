@@ -154,3 +154,45 @@ def test_temporal_rankings_use_configured_frozen_index(tmp_path: Path) -> None:
     assert result["1"] == []
     assert [row["banner_id"] for row in result["2"]] == [10]
     assert [row["banner_id"] for row in result["3"]] == [10]
+
+
+def brute_force_ids(state: TemporalHistoryState, row: dict, top_k: int) -> list[int]:
+    key = state._key(row)
+    values = []
+    for banner_id, item in state.stats.get(str(key), {}).items():
+        if item.clicks >= state.min_clicks:
+            values.append(
+                (state._score(item), item.clicks, item.last_show_time, banner_id)
+            )
+    values.sort(key=lambda value: (-value[0], -value[1], -value[2], value[3]))
+    return [value[3] for value in values[:top_k]]
+
+
+def test_incremental_temporal_topk_matches_full_sort() -> None:
+    state = TemporalHistoryState(
+        "global_pop_sc_v1",
+        min_clicks=1,
+        bayes_prior=20.0,
+    )
+    probe = request("999", 999, 999)
+    observations = [
+        request("1", 100, 10),
+        request("2", 101, 20),
+        request("3", 102, 30),
+        request("4", 103, 20),
+        request("5", 104, 40),
+        request("6", 105, 40),
+        request("7", 106, 40),
+        request("8", 107, 10),
+    ]
+    for row in observations:
+        state.observe(row)
+        expected = brute_force_ids(state, probe, top_k=2)
+        actual = [item["banner_id"] for item in state.rank(probe, top_k=2)]
+        assert actual == expected
+
+    # Expanding K must fall back to the complete state rather than only the
+    # previously cached top two.
+    assert [item["banner_id"] for item in state.rank(probe, top_k=4)] == (
+        brute_force_ids(state, probe, top_k=4)
+    )

@@ -50,6 +50,8 @@ class TemporalHistoryState:
         self.bayes_prior = float(bayes_prior)
         self.valid_banner_ids = valid_banner_ids
         self.stats: dict[str, dict[int, BannerStats]] = defaultdict(dict)
+        self.dirty: dict[str, set[int]] = defaultdict(set)
+        self.ranking_cache: dict[str, tuple[int, list[int]]] = {}
 
     def _key(self, request: dict[str, Any]) -> str | None:
         query = str(request.get("query_key") or stable_text_key(request.get("query")))
@@ -90,22 +92,39 @@ class TemporalHistoryState:
             item.clicks += 1
             item.source_cost_sum += float(source_cost or 0.0)
             item.last_show_time = max(item.last_show_time, show_time)
+            self.dirty[key].add(normalized_banner_id)
+
+    def _score(self, item: BannerStats) -> float:
+        if self.family in {"user", "query_sc", "query_region_sc"}:
+            return item.source_cost_sum
+        support = item.clicks / (item.clicks + self.bayes_prior)
+        return item.source_cost_sum * support
 
     def rank(self, request: dict[str, Any], *, top_k: int) -> list[dict[str, Any]]:
         key = self._key(request)
-        if key is None:
+        if key is None or top_k <= 0:
             return []
+        cached_width, cached_ids = self.ranking_cache.get(key, (0, []))
+        cache_width = max(cached_width, top_k)
+        by_banner = self.stats.get(key, {})
+        if cached_width < top_k:
+            candidate_ids = set(by_banner)
+        else:
+            candidate_ids = set(cached_ids)
+            candidate_ids.update(self.dirty.get(key, ()))
         ranked = []
-        for banner_id, item in self.stats.get(key, {}).items():
+        for banner_id in candidate_ids:
+            item = by_banner[banner_id]
             if item.clicks < self.min_clicks:
                 continue
-            if self.family in {"user", "query_sc", "query_region_sc"}:
-                score = item.source_cost_sum
-            else:
-                support = item.clicks / (item.clicks + self.bayes_prior)
-                score = item.source_cost_sum * support
+            score = self._score(item)
             ranked.append((score, item.clicks, item.last_show_time, banner_id, item))
         ranked.sort(key=lambda row: (-row[0], -row[1], -row[2], row[3]))
+        self.ranking_cache[key] = (
+            cache_width,
+            [row[3] for row in ranked[:cache_width]],
+        )
+        self.dirty[key].clear()
         result = []
         for score, _, _, banner_id, item in ranked[:top_k]:
             result.append(
