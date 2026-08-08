@@ -4,7 +4,7 @@ experiment:
   name: two_tower_v2_walk_forward_100m_s10
 
 paths:
-  weekly_train_table: //home/astrofimuk/mla_two_stage/two_tower_v2_weekly/train_clicks_100m_v1
+  weekly_train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_100m_v1
   week_stats_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10/week_stats.parquet
   oof_requests_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10/oof_requests.parquet
   history_events_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10/history_events.parquet
