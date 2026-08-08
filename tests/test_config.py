@@ -152,6 +152,19 @@ class ConfigTest(unittest.TestCase):
             ["region", "domain", "group", "query"],
         )
 
+    def test_two_tower_v2_probe_has_only_one_batched_source(self) -> None:
+        cfg = compose_config("i2_two_tower_v2_probe", mode="offline")
+        enabled = [
+            str(name)
+            for name, item in cfg.candidates.generators.items()
+            if bool(item.enabled)
+        ]
+        self.assertEqual(enabled, ["two_tower_v2"])
+        source = cfg.candidates.generators.two_tower_v2
+        self.assertEqual(source.batch_size, 256)
+        self.assertEqual(source.top_k, 1000)
+        self.assertEqual(cfg.pipeline.max_wall_seconds, 3600)
+
 
 if __name__ == "__main__":
     unittest.main()

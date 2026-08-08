@@ -1,0 +1,38 @@
+experiment:
+  name: i2_two_tower_v2_probe
+  description: Candidate-only temporal probe for field-aware DCN TwoTower v2
+
+pipeline:
+  max_parallel_cg: 1
+  max_wall_seconds: 3600
+
+candidates:
+  union_max_candidates: 1000
+  ranker_pool: 500
+  generators:
+    tfidf_v1:
+      enabled: false
+    two_tower_fps_v1:
+      enabled: false
+    history_legacy_v1:
+      enabled: false
+    two_tower_v2:
+      enabled: true
+      resource: gpu
+      feature_name: two_tower_v2
+      code_path_key: two_tower_v2_code
+      code_dependency_path_keys:
+        - two_tower_v2_model_code
+        - two_tower_v2_data_code
+        - two_tower_v2_training_code
+      artifact_path_key: two_tower_v2_artifact
+      python_path_keys: [root, step2_root]
+      quota: 1000
+      top_k: 1000
+      weight: 1.0
+      batch_size: 256
+
+evaluation:
+  complementarity_baseline_sources: [two_tower_v2]
+  high_value_quantile: 0.9
+
