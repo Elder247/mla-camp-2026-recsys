@@ -211,9 +211,11 @@ TwoTower v2 implementation evidence:
   coverage; the full project suite passes 64/64 before supervisors;
 - static history and the old full-data tower are excluded from OOF pools;
   temporal/full each train CatBoost once, and full remains gate-controlled;
+- val/test reuse the verified full-100M v2 retriever of the same architecture,
+  while OOF rows remain bound to their 10M pre-update weekly snapshots;
 - pipeline and model tracking use UnderDeep `camp-2026/modern-plumber` with a
-  masked local JSONL fallback; the required client is installed and only token
-  presence was checked;
+  masked local JSONL fallback; a live contract-smoke successfully created a
+  run and sent metrics/summary, while only token presence was checked;
 - weekly preparation, model training, smoke, temporal promotion and full are
   detached sequential processes, so loss of the local internet connection does
   not stop them.

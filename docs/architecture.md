@@ -213,10 +213,11 @@ For week `w`, execution order is fixed in `schedule.json`:
 5. checkpoint model plus optimizer, then continue to `w + 1`.
 
 The first week is predicted by the seeded random model. Each later week uses a
-checkpoint trained only through earlier weeks. A separate final snapshot,
-trained through all eight weeks, serves the later fixed validation/test dates.
-The generator chooses a snapshot from request `show_time`; it never uses the
-final model for an OOF week.
+checkpoint trained only through earlier weeks. Later fixed validation/test
+dates reuse the already verified full-100M v2 artifact of the same architecture
+(trained only on pre-validation raw data). This avoids both a weaker 10M final
+retriever and a redundant retrain. The generator chooses a snapshot from
+request `show_time`; it never uses the full model for an OOF week.
 
 Sampling keeps 750 deterministic request hashes per week (up to 6,000 OOF
 groups) and preserves multi-click targets. The same streaming pass writes a
