@@ -84,6 +84,19 @@ candidates:
 
 features:
   version: feature_v2
+  counter_version: click_events_asof_v1
+  counter_windows_days: [7, 28, 0]
+  counter_families:
+    - banner
+    - group
+    - domain
+    - query
+    - region
+    - user
+    - query_banner
+    - region_banner
+    - user_banner
+    - user_group
   enabled:
     - retrieval_provenance_v2
     - request_context_v2
@@ -99,3 +112,4 @@ ranker:
   depth: 8
   learning_rate: 0.04
   l2_leaf_reg: 7.0
+  raw_sc_scale: 1000000.0

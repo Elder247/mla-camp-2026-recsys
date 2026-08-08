@@ -40,6 +40,9 @@ candidates:
 features:
   version: feature_v1
   enabled: []
+  counter_version: click_events_asof_v1
+  counter_windows_days: []
+  counter_families: []
 
 ranker:
   version: catboost_logsc_baseline_v1
@@ -55,6 +58,13 @@ ranker:
   l2_leaf_reg: 5.0
   early_stopping_rounds: 75
   random_seed: ${project.seed}
+  log_sc_scale: 1000000.0
+  raw_sc_scale: 1000000.0
+  importance:
+    permutation_sample_rows: 20000
+    permutation_repeats: 1
+    shap_sample_rows: 2000
+    shap_top_k: 20
 
 evaluation:
   cutoffs: [1, 5, 10, 20, 50, 100, 500, 1000]

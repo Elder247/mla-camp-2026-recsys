@@ -48,6 +48,54 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(values["history_region_present"], 1.0)
         self.assertEqual(values["history__present"], 1.0)
 
+    def test_v2_feature_order_raw_value_and_counters(self) -> None:
+        enabled = [
+            "retrieval_provenance_v2",
+            "candidate_static_v2",
+            "weekly_counters_v1",
+            "cross_features_v1",
+        ]
+        names = feature_names(
+            ["tfidf"],
+            version="feature_v2",
+            enabled_groups=enabled,
+            counter_families=["banner"],
+            counter_windows_days=[0],
+        )
+        candidate = {
+            "banner_id": 1,
+            "title": "кофе",
+            "text": "",
+            "url": "example.test",
+            "source_cost": 1234567.0,
+            "rrf_score": 0.1,
+            "source_count": 1,
+            "retrieval": {
+                "tfidf": {"rank": 1, "reciprocal_rank": 1.0, "score": 3.0}
+            },
+            "counter_features": {
+                "counter__banner__all__clicks_log1p": 2.0,
+                "counter__banner__all__sc_sum_log1p": 3.0,
+                "counter__banner__all__sc_avg": 4.0,
+                "counter__banner__all__age_days": 5.0,
+                "counter__banner__all__present": 1.0,
+            },
+        }
+        row = extract_feature_rows(
+            {"query": "кофе", "context": {}},
+            [candidate],
+            ["tfidf"],
+            version="feature_v2",
+            enabled_groups=enabled,
+            counter_families=["banner"],
+            counter_windows_days=[0],
+        )[0]
+        values = dict(zip(names, row))
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(values["source_cost_raw"], 1234567.0)
+        self.assertEqual(values["counter__banner__all__present"], 1.0)
+        self.assertEqual(values["source_cost_x_banner_sc_avg"], 4938268.0)
+
 
 if __name__ == "__main__":
     unittest.main()

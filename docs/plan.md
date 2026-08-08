@@ -10,7 +10,7 @@ This file tracks implementation status only; it does not redefine priorities.
 | Docs/config/run contract | completed | commit `786f69e`; 10 pytest + 10 legacy unittest pass |
 | Iteration 0 baseline pipeline | completed | temporal/full runs, natural pool, cache parity, strict 10k submission |
 | Iteration 1 candidate generators | in progress | implementation/smoke complete; full temporal complementarity and SC ceiling pending |
-| Iteration 1 feature v2 | pending | chunk parity, leakage-safe schema, memory/timing report |
+| Iteration 1 feature v2 | in progress | implementation + unit contract complete; VM smoke/schema/memory pending |
 | Iteration 1 SC-aware CatBoost | pending | honest SC@50 win, importance, validated batch prediction |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
@@ -68,3 +68,15 @@ Iteration 1 candidate smoke evidence (`20260808_0815_i1_cg_smoke`):
 - the 20-request sample is contract evidence only. User/region/global coverage
   is zero on the first 20 fit requests and must be judged on the full temporal
   holdout; no source is accepted from smoke metrics.
+
+Iteration 1 feature-v2 implementation evidence:
+
+- `feature_v1` order and baseline behavior remain unchanged;
+- v2 includes raw/static value, group/domain, context, retrieval agreement,
+  URL/text and configured counter/cross families;
+- offline/full counter artifacts have separate paths and manifests;
+- strict ASOF unit tests exclude same-timestamp targets and verify frozen
+  inference cutoff semantics;
+- counters are documented as click/event counts because no impression stream
+  is available; no unsupported CTR feature is synthesized;
+- 32/32 tests pass before the feature-v2 VM smoke.

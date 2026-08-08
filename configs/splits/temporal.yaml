@@ -16,9 +16,10 @@ split:
     holdout_request_groups: 3500
   counters:
     offline:
-      cutoff_ts: 1781643786
+      fit_split: train
+      frozen_cutoff_ts: 1782056217
       sources: [train_100m]
     full:
-      cutoff_ts: 1782248326
+      fit_split: full_train
+      frozen_cutoff_ts: 1782248326
       sources: [train_100m, val_clicks]
-

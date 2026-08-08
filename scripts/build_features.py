@@ -21,6 +21,7 @@ from mla_recsys.artifacts import (  # noqa: E402
 from mla_recsys.command import load_stage_context, require_choice  # noqa: E402
 from mla_recsys.config import config_fingerprint  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
+from mla_recsys.counters import CounterLookup, validate_scope  # noqa: E402
 
 
 def main() -> int:
@@ -43,6 +44,18 @@ def main() -> int:
     }
     banner_index_path = Path(str(cfg.paths.banner_index))
     banner_index = BannerIndex(banner_index_path)
+    counter_lookup = None
+    frozen_counter_cutoff = None
+    counter_inputs = []
+    if str(cfg.features.version) != "feature_v1":
+        counter_dir = context.store.path / "counters" / str(cfg.runtime.scope)
+        counter_path = counter_dir / "click_events.parquet"
+        scope_path = counter_dir / "scope.json"
+        scope_manifest = json.loads(scope_path.read_text(encoding="utf-8"))
+        validate_scope(str(cfg.runtime.scope), str(scope_manifest["scope"]))
+        frozen_counter_cutoff = int(scope_manifest["frozen_cutoff_ts"])
+        counter_lookup = CounterLookup.from_parquet(counter_path)
+        counter_inputs = [fingerprint_file(counter_path), fingerprint_file(scope_path)]
     force = context.values.get("force", "false").lower() == "true"
     config_sha = config_fingerprint(cfg)
     totals = {"groups": 0, "positive_groups": 0, "missed_positive_groups": 0, "rows": 0}
@@ -60,6 +73,7 @@ def main() -> int:
             fingerprint_file(request_path),
             fingerprint_file(merged_path),
             fingerprint_file(banner_index_path),
+            *counter_inputs,
         ]
         artifact_version = str(cfg.features.version)
         cache_key = make_cache_key(
@@ -100,6 +114,8 @@ def main() -> int:
                 merged_path=merged_path,
                 requests=requests,
                 banner_index=banner_index,
+                counter_lookup=counter_lookup,
+                frozen_counter_cutoff=frozen_counter_cutoff,
             )
             with atomic_output_path(output) as temporary:
                 pq.write_table(table, temporary, compression="zstd")
@@ -124,4 +140,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -88,6 +88,27 @@ For `holdout`, state is frozen after `train`; for `test`, it is frozen after
 construct its candidate membership. Region/global value scores use configured
 minimum support and Bayesian shrinkage; user history uses exact prior clicks.
 
+## Iteration 1 features and counters
+
+`feature_v1` remains byte-for-byte ordered for the Iteration 0 baseline.
+`feature_v2` adds configured groups for retrieval agreement, request context,
+candidate static metadata, text/URL matching, past-only counters and crosses.
+Raw `SourceCost` is present alongside its log transform; `GroupExportID`,
+ClientID and URL domain are derived from the immutable one-million-banner
+index. Group/domain population and value statistics depend only on that static
+index and do not use validation labels.
+
+The available validation history is click-only: it has no trustworthy
+non-click impression stream. Counter artifacts therefore explicitly store
+click events and never label event ratios as CTR. Offline scope persists only
+`train` events and freezes them at `1782056217`; full scope persists
+`full_train` and freezes at `1782248326`. Training lookups use an exact
+`event.show_time < row.show_time` boundary, including exclusion of all events
+at the same timestamp. Holdout/test consume only the frozen fit artifact.
+Configured 7-day, 28-day and all-history windows cover banner, group, domain,
+query, region, user and selected pair families. Every feature parquet manifest
+fingerprints both the counter parquet and its scope manifest.
+
 ## Memory and execution
 
 `scripts/run_pipeline.py` is a standard-library orchestrator. It launches each
