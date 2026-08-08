@@ -157,8 +157,10 @@ The current complete detached chain is:
 ```bash
 nohup python scripts/continue_walk_forward_pipeline.py \
   --training-state /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m/training_supervisor.json \
+  --walk-forward-artifact /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m \
+  --final-artifact-override /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_dcn4_mlp3_full \
   --experiment i2_walk_forward_10m_fast_quality \
-  --smoke-run 20260808_1820_i2_wf10m_smoke \
+  --smoke-run 20260808_1845_i2_wf10m_smoke2 \
   --temporal-run 20260808_1830_i2_wf10m_temporal \
   --full-run 20260808_2030_i2_wf10m_full \
   --python /home/astrofimuk/workspace/step2_ce/.venv/bin/python \
@@ -173,3 +175,18 @@ It waits for weekly training, runs smoke, then fixed temporal validation,
 selects RRF or CatBoost by SC Recall@50, and launches full only when candidate
 SC@500 and ranker SC@50 exceed their configured gates. All pipeline runs log to
 UnderDeep `camp-2026/modern-plumber` and keep a local JSONL fallback.
+
+## Leaderboard submission
+
+The local scorer is `http://a100-1.vla.yp-c.yandex.net:8083/`. Before upload,
+run the strict submission stage and copy only its validated output from the VM:
+
+```bash
+scp astrofimuk@astrofimuk.ml-camp.ws.deep.yandex.net:\
+/home/astrofimuk/workspace/mla_two_stage/runs/<full-id>/predictions/test_top50.parquet \
+./<full-id>-test_top50.parquet
+```
+
+The form accepts a Parquet file up to 64 MiB with `HitLogID` and `BannerID`.
+Use the immutable full run ID as the submission name and record the returned
+SC Recall@50/Recall@50 in `docs/plan.md` before starting the next hypothesis.
