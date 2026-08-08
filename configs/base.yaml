@@ -61,11 +61,7 @@ ranker:
   log_sc_scale: 1000000.0
   raw_sc_scale: 1000000.0
   importance:
-    permutation_sample_rows: 20000
-    permutation_repeats: 1
-    permutation_top_features: 40
-    shap_sample_rows: 2000
-    shap_top_k: 20
+    type: PredictionValuesChange
 
 evaluation:
   cutoffs: [1, 5, 10, 20, 50, 100, 500, 1000]
