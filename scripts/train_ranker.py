@@ -39,6 +39,74 @@ def positive_groups_only(table: pa.Table) -> pa.Table:
     return table.filter(pc.equal(table["group_has_positive"], True))
 
 
+def group_weight_array(
+    table: pa.Table,
+    cfg: object,
+) -> tuple[np.ndarray | None, dict[str, object]]:
+    """Return request-level SourceCost weights expanded to candidate rows.
+
+    CatBoost requires every object in a ranking group to have the same group
+    weight. Feature rows are emitted contiguously per request, so we compute
+    one robust weight per contiguous group and repeat it for all candidates.
+    """
+    spec = cfg.ranker.get("group_weight", {})
+    kind = str(spec.get("kind", "none"))
+    if kind == "none":
+        return None, {"kind": "none"}
+    if kind != "source_cost":
+        raise ValueError(f"Unsupported ranker.group_weight.kind: {kind}")
+    if table.num_rows == 0:
+        raise ValueError("Cannot build group weights for an empty table")
+
+    cap_quantile = float(spec.get("cap_quantile", 1.0))
+    power = float(spec.get("power", 1.0))
+    minimum = float(spec.get("minimum", 1.0e-6))
+    if not 0.0 < cap_quantile <= 1.0:
+        raise ValueError("ranker.group_weight.cap_quantile must be in (0, 1]")
+    if power <= 0.0:
+        raise ValueError("ranker.group_weight.power must be positive")
+    if minimum <= 0.0:
+        raise ValueError("ranker.group_weight.minimum must be positive")
+
+    group_ids = table["group_id"].combine_chunks().to_numpy(zero_copy_only=False)
+    starts = np.r_[0, np.flatnonzero(group_ids[1:] != group_ids[:-1]) + 1]
+    group_keys = group_ids[starts]
+    if np.unique(group_keys).size != group_keys.size:
+        raise ValueError("Ranking groups must be contiguous before weighting")
+    lengths = np.diff(np.r_[starts, table.num_rows])
+    source_cost = (
+        table["label_raw_sc"].combine_chunks().to_numpy(zero_copy_only=False)
+    )
+    # SourceCost Recall sums every clicked banner, so multi-click requests use
+    # the sum of their positive costs rather than only the largest click.
+    raw_group_weights = np.add.reduceat(source_cost, starts).astype(
+        np.float64, copy=False
+    )
+    cap = float(np.quantile(raw_group_weights, cap_quantile))
+    transformed = np.power(
+        np.maximum(np.minimum(raw_group_weights, cap), minimum), power
+    )
+    mean = float(transformed.mean())
+    if not np.isfinite(mean) or mean <= 0.0:
+        raise ValueError("SourceCost group weights have invalid mean")
+    normalized = transformed / mean
+    expanded = np.repeat(normalized, lengths).astype(np.float32, copy=False)
+    return expanded, {
+        "kind": kind,
+        "groups": int(group_keys.size),
+        "cap_quantile": cap_quantile,
+        "cap_value": cap,
+        "power": power,
+        "minimum": minimum,
+        "raw_min": float(raw_group_weights.min()),
+        "raw_median": float(np.median(raw_group_weights)),
+        "raw_max": float(raw_group_weights.max()),
+        "normalized_min": float(normalized.min()),
+        "normalized_max": float(normalized.max()),
+        "normalized_mean": float(normalized.mean()),
+    }
+
+
 def label_spec(cfg: object) -> tuple[str, float]:
     kind = str(cfg.ranker.kind)
     if kind == "ranker_logsc":
@@ -66,30 +134,41 @@ def main() -> int:
 
     names = configured_feature_names(cfg)
     label_column, label_scale = label_spec(cfg)
-    needed = ["group_id", "group_has_positive", label_column, *names]
+    needed = list(
+        dict.fromkeys(
+            ["group_id", "group_has_positive", label_column, "label_raw_sc", *names]
+        )
+    )
     train_all = read_features(context.store.path, train_split, needed)
     train = positive_groups_only(train_all)
     if train.num_rows == 0:
         raise RuntimeError("No natural-pool positive groups in train")
+    train_group_weight, train_group_weight_stats = group_weight_array(train, cfg)
     train_pool = Pool(
         matrix(train, names),
         label=train[label_column].combine_chunks().to_numpy(zero_copy_only=False)
         / label_scale,
         group_id=train["group_id"].combine_chunks().to_numpy(zero_copy_only=False),
+        group_weight=train_group_weight,
         feature_names=names,
     )
     eval_pool = None
     validation_rows = 0
+    validation_group_weight_stats = None
     if validation_split is not None:
         validation = positive_groups_only(
             read_features(context.store.path, validation_split, needed)
         )
         validation_rows = validation.num_rows
+        validation_group_weight, validation_group_weight_stats = group_weight_array(
+            validation, cfg
+        )
         eval_pool = Pool(
             matrix(validation, names),
             label=validation[label_column].combine_chunks().to_numpy(zero_copy_only=False)
             / label_scale,
             group_id=validation["group_id"].combine_chunks().to_numpy(zero_copy_only=False),
+            group_weight=validation_group_weight,
             feature_names=names,
         )
     iterations = (
@@ -137,6 +216,10 @@ def main() -> int:
         "best_score": model.get_best_score(),
         "label_column": label_column,
         "label_scale": label_scale,
+        "group_weight": {
+            "train": train_group_weight_stats,
+            "validation": validation_group_weight_stats,
+        },
     }
     atomic_write_json(model_dir / "catboost.json", metadata)
     importance = model.get_feature_importance(

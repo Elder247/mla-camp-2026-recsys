@@ -55,6 +55,7 @@ candidates:
 
 features:
   version: feature_v1
+  reuse_run: null
   enabled: []
   counter_version: click_events_asof_v1
   counter_windows_days: []
@@ -76,6 +77,11 @@ ranker:
   random_seed: ${project.seed}
   log_sc_scale: 1000000.0
   raw_sc_scale: 1000000.0
+  group_weight:
+    kind: none
+    cap_quantile: 1.0
+    power: 1.0
+    minimum: 1.0e-6
   importance:
     type: PredictionValuesChange
 

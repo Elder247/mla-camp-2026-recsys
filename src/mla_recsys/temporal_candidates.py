@@ -259,6 +259,19 @@ def temporal_rankings(
     result: dict[str, list[dict[str, Any]]] = {}
     auxiliary_iterator = iter(auxiliary)
     current_auxiliary = next(auxiliary_iterator, None)
+    frozen_inference = bool(warm_split) and all(
+        row.get("show_time") is None for row in ordered
+    )
+    if frozen_inference:
+        # Competition test requests are unlabeled and intentionally have no
+        # timestamp. Rank them against one state frozen after every available
+        # full-history event; never update that state from test requests.
+        while current_auxiliary is not None:
+            state.observe(current_auxiliary)
+            current_auxiliary = next(auxiliary_iterator, None)
+        for request in ordered:
+            result[str(request["request_id"])] = state.rank(request, top_k=top_k)
+        return result
     position = 0
     while position < len(ordered):
         timestamp = int(ordered[position].get("show_time") or 0)

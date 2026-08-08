@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
+import sys
 import tempfile
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -36,6 +39,9 @@ SOURCE_SCHEMA = pa.schema(
         pa.field("history_region_present", pa.bool_(), nullable=False),
     ]
 )
+
+
+_PARALLEL_GENERATOR: Generator | None = None
 
 
 @dataclass(frozen=True)
@@ -216,6 +222,34 @@ def candidate_row(
     }
 
 
+def _compact_ranking(ranking: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact = []
+    for raw in ranking:
+        contributions = raw.get("contributions") or {}
+        preserved = {
+            key: contributions[key]
+            for key in ("click_count", "source_cost_sum", "history")
+            if key in contributions
+        }
+        compact.append(
+            {
+                "banner_id": int(raw["banner_id"]),
+                "score": float(raw.get("score") or 0.0),
+                "contributions": preserved,
+            }
+        )
+    return compact
+
+
+def _rank_request_batch(requests: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    if _PARALLEL_GENERATOR is None:
+        raise RuntimeError("Parallel candidate generator is not initialized")
+    rankings = _PARALLEL_GENERATOR.rank_batch(
+        [request_example(request) for request in requests]
+    )
+    return [_compact_ranking(ranking) for ranking in rankings]
+
+
 def generate_source_candidates(
     *,
     spec: SourceSpec,
@@ -224,6 +258,8 @@ def generate_source_candidates(
     split: str,
     partitions: int,
     buffer_rows: int,
+    request_workers: int = 1,
+    parallel_batch_size: int = 1,
 ) -> dict[str, Any]:
     sink = CandidatePartitionSink(
         run_path=run_path,
@@ -237,27 +273,54 @@ def generate_source_candidates(
     covered = 0
     try:
         materialized = list(requests)
+        workers = max(1, int(request_workers))
+        if not sys.platform.startswith("linux"):
+            workers = 1
         batch_size = max(1, int(spec.generator.batch_size))
-        for start in range(0, len(materialized), batch_size):
-            batch = materialized[start : start + batch_size]
-            rankings = spec.generator.rank_batch(
-                [request_example(request) for request in batch]
+        if workers > 1:
+            batch_size = max(batch_size, int(parallel_batch_size))
+        batches = [
+            materialized[start : start + batch_size]
+            for start in range(0, len(materialized), batch_size)
+        ]
+        if workers > 1:
+            global _PARALLEL_GENERATOR
+            _PARALLEL_GENERATOR = spec.generator
+            executor = ProcessPoolExecutor(
+                max_workers=workers,
+                mp_context=multiprocessing.get_context("fork"),
             )
-            for request, ranking in zip(batch, rankings):
-                request_count += 1
-                seen: set[int] = set()
-                accepted = 0
-                partition = stable_partition(str(request["request_id"]), partitions)
-                for source_rank, raw in enumerate(ranking, start=1):
-                    banner_id = int(raw["banner_id"])
-                    if banner_id in seen:
-                        continue
-                    seen.add(banner_id)
-                    if accepted >= spec.generator.quota:
-                        break
-                    accepted += 1
-                    sink.append(partition, candidate_row(request, raw, source_rank))
-                covered += int(accepted > 0)
+            ranked_batches = executor.map(_rank_request_batch, batches, chunksize=1)
+        else:
+            executor = None
+            ranked_batches = (
+                spec.generator.rank_batch(
+                    [request_example(request) for request in batch]
+                )
+                for batch in batches
+            )
+        try:
+            batch_iterator = zip(batches, ranked_batches)
+            for batch, rankings in batch_iterator:
+                for request, ranking in zip(batch, rankings):
+                    request_count += 1
+                    seen: set[int] = set()
+                    accepted = 0
+                    partition = stable_partition(str(request["request_id"]), partitions)
+                    for source_rank, raw in enumerate(ranking, start=1):
+                        banner_id = int(raw["banner_id"])
+                        if banner_id in seen:
+                            continue
+                        seen.add(banner_id)
+                        if accepted >= spec.generator.quota:
+                            break
+                        accepted += 1
+                        sink.append(partition, candidate_row(request, raw, source_rank))
+                    covered += int(accepted > 0)
+        finally:
+            if executor is not None:
+                executor.shutdown(wait=True, cancel_futures=True)
+                _PARALLEL_GENERATOR = None
         sink.close()
     except BaseException:
         sink.abort()
@@ -274,6 +337,8 @@ def generate_source_candidates(
         "wall_seconds": time.monotonic() - started,
         "batch_size": int(spec.generator.batch_size),
         "batch_implementation": hasattr(spec.generator.module, "rank_batch"),
+        "request_workers": workers,
+        "parallel_batch_size": batch_size,
     }
 
 

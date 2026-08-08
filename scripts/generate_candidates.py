@@ -45,6 +45,25 @@ def _same_content(left: Path, right: Path) -> bool:
     return all(a.get(key) == b.get(key) for key in ("exists", "size_bytes", "sha256"))
 
 
+def _same_fingerprint_inputs(current: list[dict], previous: object) -> bool:
+    if not isinstance(previous, list) or len(current) != len(previous):
+        return False
+    keys = ("exists", "size_bytes", "sha256")
+    return all(
+        all(left.get(key) == right.get(key) for key in keys)
+        for left, right in zip(current, previous)
+        if isinstance(right, dict)
+    ) and all(isinstance(value, dict) for value in previous)
+
+
+def _generator_semantics(value: object) -> dict:
+    plain = OmegaConf.to_container(value, resolve=True)
+    assert isinstance(plain, dict)
+    for key in ("request_workers", "parallel_batch_size", "parallel_priority"):
+        plain.pop(key, None)
+    return plain
+
+
 def _materialize_file(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_raw = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
@@ -86,9 +105,9 @@ def try_reuse_candidates(
     if not _same_content(request_path, donor_request):
         return None
     previous_cfg = OmegaConf.load(donor_config)
-    if OmegaConf.to_container(
-        previous_cfg.candidates.generators[source], resolve=True
-    ) != OmegaConf.to_container(cfg.candidates.generators[source], resolve=True):
+    if _generator_semantics(
+        previous_cfg.candidates.generators[source]
+    ) != _generator_semantics(cfg.candidates.generators[source]):
         return None
     rows: list[int] = []
     donor_parts: list[Path] = []
@@ -98,6 +117,8 @@ def try_reuse_candidates(
         if not manifest_path.is_file():
             return None
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not _same_fingerprint_inputs(inputs, manifest.get("inputs")):
+            return None
         valid, _ = validate_output_cache(
             path,
             expected_cache_key=str(manifest.get("cache_key")),
@@ -213,6 +234,12 @@ def main() -> int:
             split=split,
             partitions=partitions,
             buffer_rows=int(cfg.data.candidate_buffer_rows),
+            request_workers=int(
+                cfg.candidates.generators[cg].get("request_workers", 1)
+            ),
+            parallel_batch_size=int(
+                cfg.candidates.generators[cg].get("parallel_batch_size", 1)
+            ),
         )
     finalize_source_manifests(
         run_path=context.store.path,

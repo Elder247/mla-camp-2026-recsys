@@ -283,3 +283,38 @@ Current fast 100M walk-forward decision:
   automatically before promotion;
 - promotion is stricter than the current best: candidate SC@500 must exceed
   `0.704875` and the selected ranker SC@50 must exceed `0.622388`.
+
+100M walk-forward temporal evidence (`20260809_0050_i2_wf100m_temporal`):
+
+- the writable YT materialization contains `21,813,184` chronological clicks;
+  weekly TwoTower updates sample `2,180,888` examples while preserving all
+  history events and exactly `6,000` pre-update OOF requests;
+- the merged natural pool reaches Recall/SC Recall@500
+  `0.633819/0.710200`; standalone CatBoost reaches SC Recall@50 `0.636936`;
+- the cached rank-linear probe improves SC Recall@50 to `0.643664`, above the
+  previous honest gate `0.622388`, and selects 482 trees for the full fit;
+- the first promoted full run exposed a full-scope contract bug before upload:
+  untimed test requests were treated as timestamp zero, so every frozen
+  query/query-region/global history source emitted zero test rows;
+- the leakage-safe fix warms one state from all full-history events and freezes
+  it for every unlabeled test request. Candidate reuse now also compares code,
+  artifact and data fingerprints, preventing reuse of the old zero-row files;
+- the next short ranker hypothesis weights each request by its summed
+  SourceCost, clipped at temporal p99 (`236M`) and normalized to mean one.
+  Candidate and feature parquet are reused only after strict contract checks;
+- TF-IDF request scoring now has an optional fork-based CPU path. A real-model
+  64-request smoke produced identical 64,000 rows and a `1.82x` speedup with
+  four workers; the full test suite passes `83/83` in an isolated VM checkout.
+
+100M control full/private evidence (`20260809_0230_i2_wf100m_full`):
+
+- the run completed with 11,999,250 full-train and 7,500,000 test feature rows;
+  its strict 10,000 x 50 submission contract passed with SHA-256
+  `c1149a6f9b74f564eed56fc83b77408cc58c13f2c6a57a8682387906cafc680c`;
+- all three test history sources emitted zero rows because untimed test
+  requests were evaluated before the frozen state. The control submission at
+  `2026-08-09 02:40:52 MSK` scored SC Recall@50 `0.5113`, Recall@50 `0.4337`
+  and Recall@10 `0.2544`;
+- the result is rejected. It confirms that the temporal/full history mismatch
+  is material and that promotion must include a non-empty frozen-history test
+  contract check, not only temporal gates.

@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import json
 import multiprocessing
+import os
+import shutil
 import sys
+import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -28,6 +31,113 @@ from mla_recsys.counters import CounterLookup, validate_scope  # noqa: E402
 
 
 _FEATURE_STATE: dict = {}
+
+
+def _fingerprint_content(value: dict) -> tuple[object, ...]:
+    return tuple(value.get(key) for key in ("exists", "size_bytes", "sha256"))
+
+
+def _materialize_file(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_raw = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    os.close(fd)
+    temporary = Path(temporary_raw)
+    temporary.unlink()
+    try:
+        try:
+            os.link(source, temporary)
+        except OSError:
+            shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _feature_config_without_reuse(cfg: object) -> dict:
+    value = OmegaConf.to_container(cfg.features, resolve=True)
+    assert isinstance(value, dict)
+    value.pop("reuse_run", None)
+    return value
+
+
+def _table_stats(table: object) -> dict[str, int]:
+    request_ids = table["request_id"].to_pylist()
+    positive_flags = table["is_positive"].to_pylist()
+    group_positive_flags = table["group_has_positive"].to_pylist()
+    groups = len(set(request_ids))
+    positives = int(sum(positive_flags))
+    positive_group_ids = {
+        request_id
+        for request_id, flag in zip(request_ids, group_positive_flags)
+        if flag
+    }
+    return {
+        "rows": table.num_rows,
+        "groups": groups,
+        "positive_groups": len(positive_group_ids),
+        "missed_positive_groups": max(0, groups - len(positive_group_ids))
+        if positives >= 0
+        else 0,
+    }
+
+
+def _try_reuse_feature_partition(
+    *,
+    partition: int,
+    output: Path,
+    inputs: list[dict],
+    config_sha: str,
+) -> dict[str, int] | None:
+    from mla_recsys.feature_cache import feature_schema
+
+    cfg = _FEATURE_STATE["cfg"]
+    donor_raw = cfg.features.get("reuse_run")
+    if not donor_raw:
+        return None
+    donor = Path(str(donor_raw))
+    donor_config_path = donor / "config.yaml"
+    donor_output = donor / "features" / _FEATURE_STATE["split"] / output.name
+    donor_manifest_path = donor_output.with_name(donor_output.name + ".manifest.json")
+    if not donor_config_path.is_file() or not donor_manifest_path.is_file():
+        return None
+    donor_cfg = OmegaConf.load(donor_config_path)
+    if _feature_config_without_reuse(donor_cfg) != _feature_config_without_reuse(cfg):
+        return None
+    donor_manifest = json.loads(donor_manifest_path.read_text(encoding="utf-8"))
+    if str(donor_manifest.get("artifact_version")) != str(cfg.features.version):
+        return None
+    donor_inputs = donor_manifest.get("inputs")
+    if not isinstance(donor_inputs, list) or len(donor_inputs) != len(inputs):
+        return None
+    if any(
+        _fingerprint_content(current) != _fingerprint_content(previous)
+        for current, previous in zip(inputs, donor_inputs)
+    ):
+        return None
+    valid, _ = validate_output_cache(
+        donor_output,
+        expected_cache_key=str(donor_manifest.get("cache_key")),
+        expected_schema=str(feature_schema(cfg)),
+    )
+    if not valid:
+        return None
+    _materialize_file(donor_output, output)
+    table = pq.read_table(
+        output,
+        columns=["group_has_positive", "is_positive", "request_id"],
+    )
+    write_output_manifest(
+        output,
+        stage=f"build_features_{_FEATURE_STATE['split']}_{partition}",
+        artifact_version=str(cfg.features.version),
+        config_sha256=config_sha,
+        inputs=inputs,
+        rows=table.num_rows,
+        schema=str(feature_schema(cfg)),
+        scope=str(cfg.runtime.scope),
+    )
+    return _table_stats(table)
 
 
 def _initialize_feature_worker(
@@ -102,6 +212,14 @@ def _build_one_feature_partition(
         config_sha256=config_sha,
         inputs=inputs,
     )
+    reused = None if force else _try_reuse_feature_partition(
+        partition=partition,
+        output=output,
+        inputs=inputs,
+        config_sha=config_sha,
+    )
+    if reused is not None:
+        return partition, {**reused, "reused": 1}
     if not force and validate_output_cache(
         output,
         expected_cache_key=cache_key,
@@ -111,24 +229,7 @@ def _build_one_feature_partition(
             output,
             columns=["group_has_positive", "is_positive", "request_id"],
         )
-        groups = len(set(table["request_id"].to_pylist()))
-        positives = int(sum(table["is_positive"].to_pylist()))
-        positive_group_ids = {
-            request_id
-            for request_id, flag in zip(
-                table["request_id"].to_pylist(),
-                table["group_has_positive"].to_pylist(),
-            )
-            if flag
-        }
-        stats = {
-            "rows": table.num_rows,
-            "groups": groups,
-            "positive_groups": len(positive_group_ids),
-            "missed_positive_groups": max(0, groups - len(positive_group_ids))
-            if positives >= 0
-            else 0,
-        }
+        stats = _table_stats(table)
     else:
         table, stats = build_feature_partition(
             cfg=cfg,
@@ -150,7 +251,7 @@ def _build_one_feature_partition(
             schema=str(feature_schema(cfg)),
             scope=str(cfg.runtime.scope),
         )
-    return partition, stats
+    return partition, {**stats, "reused": 0}
 
 
 def main() -> int:
@@ -165,7 +266,13 @@ def main() -> int:
     banner_index_path = Path(str(cfg.paths.banner_index))
     force = context.values.get("force", "false").lower() == "true"
     config_sha = config_fingerprint(cfg)
-    totals = {"groups": 0, "positive_groups": 0, "missed_positive_groups": 0, "rows": 0}
+    totals = {
+        "groups": 0,
+        "positive_groups": 0,
+        "missed_positive_groups": 0,
+        "rows": 0,
+        "reused": 0,
+    }
     cfg_dict = to_plain_dict(cfg)
     workers = max(1, int(cfg.pipeline.get("feature_partition_workers", 1)))
     initargs = (
@@ -213,7 +320,12 @@ def main() -> int:
         for key in totals:
             totals[key] += int(stats[key])
         partition_rows.append(int(stats["rows"]))
-    report = {"split": split, **totals, "partition_rows": partition_rows}
+    report = {
+        "split": split,
+        **totals,
+        "reused_from": str(cfg.features.get("reuse_run") or "") or None,
+        "partition_rows": partition_rows,
+    }
     atomic_write_json(context.store.path / "metrics" / f"features_{split}.json", report)
     print(json.dumps(report, indent=2))
     return 0

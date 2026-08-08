@@ -76,6 +76,42 @@ def test_holdout_uses_frozen_train_state(tmp_path: Path) -> None:
     assert [row["banner_id"] for row in result["3"]] == [10]
 
 
+def test_untimed_test_uses_all_full_train_history_without_test_updates(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_request_parquet(
+        data_dir / "full_train_requests.parquet",
+        [request("1", 100, 10)],
+    )
+    test_rows = [
+        {
+            **request("2", 200, 20),
+            "show_time": None,
+            "clicked_banner_ids": [],
+            "clicked_source_costs": [],
+        },
+        {
+            **request("3", 201, 30),
+            "show_time": None,
+            "clicked_banner_ids": [20],
+            "clicked_source_costs": [20.0],
+        },
+    ]
+
+    result = temporal_rankings(
+        cfg=cfg(),
+        run_path=tmp_path,
+        split="test",
+        source="history_user_v1",
+        requests=test_rows,
+    )
+
+    assert [row["banner_id"] for row in result["2"]] == [10]
+    assert [row["banner_id"] for row in result["3"]] == [10]
+
+
 def test_external_history_is_strictly_prior_for_oof_rows(tmp_path: Path) -> None:
     events = tmp_path / "history.parquet"
     pq.write_table(
