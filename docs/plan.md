@@ -10,8 +10,8 @@ This file tracks implementation status only; it does not redefine priorities.
 | Docs/config/run contract | completed | commit `786f69e`; 10 pytest + 10 legacy unittest pass |
 | Iteration 0 baseline pipeline | completed | temporal/full runs, natural pool, cache parity, strict 10k submission |
 | Iteration 1 candidate generators | in progress | implementation/smoke complete; full temporal complementarity and SC ceiling pending |
-| Iteration 1 feature v2 | in progress | implementation + unit contract complete; VM smoke/schema/memory pending |
-| Iteration 1 SC-aware CatBoost | in progress | raw-label/importance contract complete; honest smoke + temporal gate pending |
+| Iteration 1 feature v2 | in progress | implementation/smoke/schema complete; full temporal memory/timing pending |
+| Iteration 1 SC-aware CatBoost | in progress | raw-label/importance smoke complete; honest temporal gate pending |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -97,3 +97,19 @@ Execution reliability follow-up:
   measurement method, rather than inheriting an earlier child maximum;
 - a disconnected SSH/stdout consumer no longer raises `BrokenPipeError` in the
   orchestrator; stage output continues into the durable run log.
+
+Iteration 1 feature/ranker smoke evidence (`20260808_1230_i1_v2_smoke`):
+
+- completed end-to-end at `2026-08-08T08:37:34+03:00`, after a cache-safe
+  resume from the deliberate no-`PYTHONPATH` failure gate;
+- counter artifact has 20 click events and the offline frozen cutoff;
+- train/holdout feature outputs contain 20,000 rows each, one identical schema,
+  276 unique ordered features and zero NaN/Inf values;
+- cache parity covers 40/40 requests with zero mismatches; 36/36 post-run tests
+  pass;
+- raw-SC CatBoost metadata records `label_raw_sc` and scale `1,000,000`; all
+  standard/permutation/SHAP reports exist;
+- feature stages take 15.5/15.4 seconds with 2.66 GiB stage RSS; training and
+  reports take 7.3 seconds with 661 MiB RSS;
+- tiny-sample RRF/CatBoost SC@50 is `0.510672/0.504502`. This is contract-only
+  evidence and is not used to accept or reject I1.

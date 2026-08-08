@@ -54,5 +54,11 @@ python scripts/run_pipeline.py experiment=i1_more_cg_features_sc run_id=<id> mod
 python scripts/run_pipeline.py experiment=i1_more_cg_features_sc run_id=<id> mode=full
 ```
 
+An Iteration 1 ranker run writes three versioned diagnostics under
+`runs/<id>/reports/`: `feature_importance.csv`,
+`feature_importance_permutation.csv` and
+`feature_importance_shap_top20.csv`. Selection still uses
+`metrics/holdout.json` SourceCost Recall, not CatBoost's internal objective.
+
 Legacy `./run.sh` commands remain available for frozen-baseline parity but are
 not the experiment contract.
