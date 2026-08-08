@@ -16,6 +16,8 @@ This file tracks implementation status only; it does not redefine priorities.
 | Iteration 1.2 fast quality | completed, not promoted | honest RRF/CatBoost SC@50 `0.613506/0.613103` |
 | TwoTower v2 full | completed | 21.8M pairs; probe SC@500 `0.707873`, SC@50 `0.518348` |
 | 10M weekly OOF cycle | completed, rejected on private | temporal blend `0.617587`; private `0.5607`, below prior `0.5818` |
+| Iteration-0 full leaderboard check | completed, current best | private SC Recall@50 `0.5836`, Recall@50 `0.4818` |
+| 100M-history sampled walk-forward | in progress | must beat I0 temporal `0.704875/0.622388` before full promotion |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -253,3 +255,26 @@ TwoTower v2 implementation evidence:
 - the private/temporal gap and lower 10M candidate ceiling show that the
   history reduction is not quality-neutral. The next retrieval hypothesis must
   retain chronological leakage safety while restoring the 100M history scope.
+
+Iteration-0 leaderboard verification (`20260808_0040_i0_full`):
+
+- the strict 10,000-row Iteration-0 artifact was uploaded unchanged and scored
+  private SC Recall@50 `0.5836`, Recall@50 `0.4818`, Recall@10 `0.3566`;
+- it is the current accepted personal best and confirms that replacing the
+  complete train history with 10M is not quality-neutral.
+
+Current fast 100M walk-forward decision:
+
+- all 100M impressions are used to materialize the full chronological click
+  stream; OOF labels, query history and ASOF counters therefore retain the
+  complete history scope;
+- only TwoTower gradient updates are deterministically sampled at request level
+  (`10%`, capped at 400k examples per week). Multi-click targets stay together,
+  and the sample spans the complete week instead of taking its first rows;
+- user/global history generators remain disabled: prior honest complementarity
+  was zero/negligible. Query and query-region history are retained;
+- CatBoost is still fitted once per temporal/full scope on the same natural
+  candidate pool. A cheap cached CatBoost/RRF alpha probe is now run
+  automatically before promotion;
+- promotion is stricter than the current best: candidate SC@500 must exceed
+  `0.704875` and the selected ranker SC@50 must exceed `0.622388`.

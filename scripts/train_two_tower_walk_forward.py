@@ -205,18 +205,28 @@ def main() -> int:
             start=start,
             end=start + 604800,
         )
+        train_sample_fraction = float(
+            cfg.walk_forward.get("train_sample_fraction", 1.0)
+        )
         if device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(device)
         metrics = train_week(
             cfg=cfg,
             model=model,
             optimizer=optimizer,
-            rows=source.rows(),
+            rows=source.rows(
+                sample_fraction=train_sample_fraction,
+                sample_seed=int(cfg.training.seed) + index,
+            ),
             week_index=index,
             device=device,
             tracker=tracker,
         )
-        metrics.update(week_start=start, week_end_exclusive=start + 604800)
+        metrics.update(
+            week_start=start,
+            week_end_exclusive=start + 604800,
+            train_sample_fraction=train_sample_fraction,
+        )
         checkpoint = checkpoint_dir / f"after_week_{index:03d}.pt"
         save_training_checkpoint(
             checkpoint,

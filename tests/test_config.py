@@ -222,6 +222,40 @@ class ConfigTest(unittest.TestCase):
                 "two_tower_v2_walk_forward_history_events",
             )
 
+    def test_walk_forward_100m_keeps_full_history_and_compact_sources(self) -> None:
+        cfg = compose_config(
+            "i2_walk_forward_100m_s10_fast_quality", mode="offline"
+        )
+        enabled = [
+            str(name)
+            for name, item in cfg.candidates.generators.items()
+            if bool(item.enabled)
+        ]
+        self.assertEqual(
+            enabled,
+            [
+                "tfidf_v1",
+                "two_tower_v2_walk_forward",
+                "history_query_sc_oof_v1",
+                "history_query_region_oof_v1",
+            ],
+        )
+        self.assertEqual(cfg.candidates.ranker_pool, 500)
+        self.assertEqual(cfg.candidates.union_max_candidates, 500)
+        self.assertGreater(
+            cfg.promotion_gate.candidate_sourcecost_recall_at_500,
+            0.7048,
+        )
+        self.assertGreater(
+            cfg.promotion_gate.ranker_sourcecost_recall_at_50,
+            0.6223,
+        )
+        for name in enabled[2:]:
+            self.assertEqual(
+                cfg.candidates.generators[name].external_events_path_key,
+                "two_tower_v2_walk_forward_history_events",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

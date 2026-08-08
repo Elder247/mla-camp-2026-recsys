@@ -108,6 +108,10 @@ def main() -> int:
     parser.add_argument("--final-artifact-override", type=Path)
     parser.add_argument("--poll-seconds", type=int, default=20)
     parser.add_argument("--max-wait-seconds", type=int, default=7200)
+    parser.add_argument(
+        "--blend-alphas",
+        default="0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1",
+    )
     args = parser.parse_args()
     decision_path = Path(f"/tmp/{args.temporal_run}.sequence.json")
     decision = {
@@ -195,6 +199,57 @@ def main() -> int:
             atomic_write_json(decision_path, decision)
             return return_code
 
+    blend_output = args.runs / args.temporal_run / "metrics" / "rank_blend.json"
+    blend_log = args.runs / args.temporal_run / "logs" / "tune_rank_blend.log"
+    blend_command = [
+        str(args.python),
+        str(ROOT / "scripts" / "tune_rank_blend.py"),
+        "--run",
+        str(args.runs / args.temporal_run),
+        "--alphas",
+        args.blend_alphas,
+        "--output",
+        str(blend_output),
+    ]
+    if blend_output.is_file():
+        blend_record = {
+            "stage": "tune_rank_blend",
+            "status": "resume_completed",
+            "command": blend_command,
+            "output": str(blend_output),
+            "log": str(blend_log),
+        }
+    else:
+        decision.update(
+            status="blend_probe_running",
+            active_run=args.temporal_run,
+        )
+        atomic_write_json(decision_path, decision)
+        blend_log.parent.mkdir(parents=True, exist_ok=True)
+        blend_started = time.monotonic()
+        with blend_log.open("w", encoding="utf-8") as log:
+            blend_return_code = subprocess.run(
+                blend_command,
+                cwd=ROOT,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=False,
+            ).returncode
+        blend_record = {
+            "stage": "tune_rank_blend",
+            "status": "completed" if blend_return_code == 0 else "failed",
+            "return_code": blend_return_code,
+            "wall_seconds": time.monotonic() - blend_started,
+            "command": blend_command,
+            "output": str(blend_output),
+            "log": str(blend_log),
+        }
+        if blend_return_code != 0:
+            decision["commands"].append(blend_record)
+            decision.update(status="blend_probe_failed", finished_at=utc_now())
+            atomic_write_json(decision_path, decision)
+            return blend_return_code
+    decision["commands"].append(blend_record)
     decision.update(status="promotion_running", active_run=args.full_run)
     atomic_write_json(decision_path, decision)
     promotion = [

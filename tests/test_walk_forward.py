@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from mla_recsys.counters import week_start  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
 import pyarrow.parquet as pq
+from two_tower_v2.data import deterministic_sample  # noqa: E402
 from two_tower_v2.walk_forward import (  # noqa: E402
     extract_oof_requests,
     validate_week_sequence,
@@ -19,6 +20,22 @@ from two_tower_v2.walk_forward import (  # noqa: E402
 
 
 class WalkForwardTest(unittest.TestCase):
+    def test_training_sample_is_stable_and_bounded(self) -> None:
+        first = deterministic_sample("request-1", fraction=0.1, seed=2026)
+        self.assertEqual(
+            first,
+            deterministic_sample("request-1", fraction=0.1, seed=2026),
+        )
+        selected = sum(
+            deterministic_sample(value, fraction=0.1, seed=2026)
+            for value in range(10_000)
+        )
+        self.assertGreater(selected, 850)
+        self.assertLess(selected, 1_150)
+        self.assertTrue(deterministic_sample("all", fraction=1.0, seed=2026))
+        with self.assertRaises(ValueError):
+            deterministic_sample("none", fraction=0.0, seed=2026)
+
     def test_contract_predicts_before_same_week_update(self) -> None:
         first = week_start(1_780_000_000)
         weeks = [first, first + 604800, first + 2 * 604800]

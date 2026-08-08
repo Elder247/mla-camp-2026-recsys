@@ -1,0 +1,24 @@
+extends: v2_walk_forward_full.yaml
+
+experiment:
+  name: two_tower_v2_walk_forward_100m_s10
+
+paths:
+  weekly_train_table: //home/astrofimuk/mla_two_stage/two_tower_v2_weekly/train_clicks_100m_v1
+  week_stats_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10/week_stats.parquet
+  oof_requests_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10/oof_requests.parquet
+  history_events_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10/history_events.parquet
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10
+  full_quality_artifact: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_dcn4_mlp3_full
+
+tracking:
+  underdeep:
+    run_name: two-tower-v2-walk-forward-100m-s10
+
+walk_forward:
+  # OOF labels and history cover every click in all 100M impressions.  Only the
+  # neural updates are sampled, deterministically by request across each week.
+  requests_per_week: 750
+  train_sample_fraction: 0.10
+  max_examples_per_week: 400000
+  final_artifact_path_key: full_quality_artifact

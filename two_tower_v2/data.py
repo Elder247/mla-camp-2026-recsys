@@ -23,6 +23,24 @@ def feature_bucket(value: str) -> int:
     return int.from_bytes(digest[:2], "little", signed=False)
 
 
+def deterministic_sample(value: object, *, fraction: float, seed: int) -> bool:
+    """Return a stable request-level Bernoulli sample decision.
+
+    Sampling by ``uniq_id`` keeps all clicked banners of one request together
+    and spreads the retained training pairs across the complete chronological
+    week.  The full stream is still used for OOF labels and history features.
+    """
+
+    if not 0.0 < float(fraction) <= 1.0:
+        raise ValueError("sample fraction must be in (0, 1]")
+    if float(fraction) == 1.0:
+        return True
+    payload = f"{int(seed)}\x1f{value}".encode("utf-8")
+    digest = hashlib.blake2b(payload, digest_size=8).digest()
+    value_hash = int.from_bytes(digest, "little", signed=False)
+    return value_hash < int(float(fraction) * (1 << 64))
+
+
 class YtTableSource:
     def __init__(self, table: str, proxy: str) -> None:
         from common.yt_data import make_client
@@ -35,6 +53,7 @@ class YtTableSource:
         self.row_count = int(self.client.get(f"{table}/@row_count"))
         schema = self.client.get(f"{table}/@schema")
         columns = {str(item["name"]) for item in schema}
+        self.columns = columns
         missing = set(ALL_FIELDS) - columns
         if missing:
             raise ValueError(f"YT table {table} misses fields: {sorted(missing)}")
@@ -71,12 +90,27 @@ class YtWeekTableSource(YtTableSource):
         self.row_count = 0
         self.description = f"YT {proxy}:{table}[{self.start}:{self.end})"
 
-    def rows(self) -> Iterator[dict[str, list[int]]]:
+    def rows(
+        self,
+        *,
+        sample_fraction: float = 1.0,
+        sample_seed: int = 0,
+    ) -> Iterator[dict[str, list[int]]]:
         import yt.wrapper as yt
 
+        fraction = float(sample_fraction)
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError("sample fraction must be in (0, 1]")
+        columns = list(ALL_FIELDS)
+        if fraction < 1.0:
+            if "uniq_id" not in self.columns:
+                raise ValueError(
+                    f"YT weekly table requires uniq_id for sampling: {self.table}"
+                )
+            columns.append("uniq_id")
         path = yt.TablePath(
             self.table,
-            columns=list(ALL_FIELDS),
+            columns=columns,
             ranges=[
                 {
                     "lower_limit": {"key": [self.start]},
@@ -89,6 +123,12 @@ class YtWeekTableSource(YtTableSource):
             unordered=False,
             enable_read_parallel=True,
         ):
+            if fraction < 1.0 and not deterministic_sample(
+                raw.get("uniq_id"),
+                fraction=fraction,
+                seed=int(sample_seed),
+            ):
+                continue
             yield {
                 name: [int(value) for value in raw.get(name) or ()]
                 for name in ALL_FIELDS

@@ -27,7 +27,7 @@ def test_promotion_selects_best_temporal_ranking_and_prefers_rrf_on_tie() -> Non
     assert select_ranking(metrics, ["rrf", "catboost"])[0] == "rrf"
 
 
-def test_promotion_loads_only_the_configured_blend(tmp_path) -> None:
+def test_promotion_loads_best_temporal_blend_for_configured_method(tmp_path) -> None:
     cfg = compose_config(
         "i2_walk_forward_10m_fast_quality",
         run_id="20260808_2030_blend",
@@ -36,13 +36,15 @@ def test_promotion_loads_only_the_configured_blend(tmp_path) -> None:
     )
     metrics = tmp_path / "metrics"
     metrics.mkdir()
-    expected = {"50": {"sourcecost_recall": 0.6175}}
+    weaker = {"50": {"sourcecost_recall": 0.6175, "recall": 0.51}}
+    expected = {"50": {"sourcecost_recall": 0.6180, "recall": 0.50}}
     (metrics / "rank_blend_fine.json").write_text(
         json.dumps(
             {
                 "results": [
-                    {"method": "rank_linear", "alpha": 0.7, "metrics": {}},
-                    {"method": "rank_linear", "alpha": 0.75, "metrics": expected},
+                    {"method": "score_minmax", "alpha": 0.1, "metrics": expected},
+                    {"method": "rank_linear", "alpha": 0.75, "metrics": weaker},
+                    {"method": "rank_linear", "alpha": 0.6, "metrics": expected},
                 ]
             }
         ),
@@ -54,3 +56,4 @@ def test_promotion_loads_only_the_configured_blend(tmp_path) -> None:
     assert loaded is not None
     assert loaded[0] == expected
     assert loaded[1].endswith("rank_blend_fine.json")
+    assert loaded[2] == 0.6
