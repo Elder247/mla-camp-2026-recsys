@@ -121,6 +121,37 @@ class ConfigTest(unittest.TestCase):
             ["region", "domain", "group", "query"],
         )
 
+    def test_fast_quality_restores_depth_and_only_valuable_history_sources(self) -> None:
+        cfg = compose_config("i1_fast_quality", mode="offline")
+        enabled = [
+            str(name)
+            for name, item in cfg.candidates.generators.items()
+            if bool(item.enabled)
+        ]
+        self.assertEqual(
+            enabled,
+            [
+                "tfidf_v1",
+                "two_tower_fps_v1",
+                "history_legacy_v1",
+                "history_query_click_v1",
+                "history_query_sc_v1",
+                "history_query_region_v1",
+            ],
+        )
+        self.assertEqual(cfg.candidates.generators.tfidf_v1.top_k, 1000)
+        self.assertEqual(cfg.candidates.generators.two_tower_fps_v1.top_k, 1000)
+        self.assertEqual(cfg.candidates.ranker_pool, 500)
+        self.assertEqual(cfg.candidates.union_max_candidates, 2200)
+        self.assertEqual(cfg.candidates.rrf_constant, 40.0)
+        self.assertEqual(cfg.ranker.kind, "ranker_raw_sc_label")
+        self.assertEqual(cfg.ranker.iterations, 900)
+        self.assertEqual(cfg.pipeline.max_wall_seconds, 10800)
+        self.assertEqual(
+            list(cfg.features.counter_families),
+            ["region", "domain", "group", "query"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

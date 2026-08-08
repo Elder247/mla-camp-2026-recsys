@@ -100,3 +100,8 @@ python scripts/continue_to_full.py \
   --output-runs /home/astrofimuk/workspace/mla_two_stage/runs \
   --immutable-artifacts /home/astrofimuk/workspace/mla_two_stage/artifacts
 ```
+
+Use `i1_fast_quality` for the follow-up that restores full TF-IDF/Two-Tower
+depth, retains only high-importance query history signals, and switches back to
+the raw-SourceCost label. The launch and selector commands are identical except
+for `--experiment i1_fast_quality` / `experiment=i1_fast_quality`.

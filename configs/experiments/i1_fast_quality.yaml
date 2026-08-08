@@ -1,0 +1,108 @@
+experiment:
+  name: i1_fast_quality
+  description: Deep valid retrieval with high-value history signals and compact SC-aware reranking
+
+promotion_gate:
+  # Honest post-index-filter I1 temporal baselines. The older I0 values include
+  # history banners that cannot pass the current submission contract.
+  candidate_sourcecost_recall_at_500: 0.6867663
+  ranker_sourcecost_recall_at_50: 0.6160454
+  ranking_candidates: [rrf, catboost]
+
+pipeline:
+  max_parallel_cg: 3
+  max_wall_seconds: 10800
+
+candidates:
+  rrf_constant: 40.0
+  union_max_candidates: 2200
+  ranker_pool: 500
+  generators:
+    tfidf_v1:
+      enabled: true
+      parallel_priority: 100
+      feature_name: tfidf
+      code_path_key: tfidf_code
+      artifact_path_key: tfidf_artifact
+      python_path_keys: [tfidf_root]
+      quota: 1000
+      top_k: 1000
+      weight: 0.25
+    two_tower_fps_v1:
+      enabled: true
+      resource: gpu
+      feature_name: two_tower_fps
+      code_path_key: two_tower_batch_code
+      code_dependency_path_keys: [step2_inference_code, step2_model_code]
+      artifact_path_key: step3_artifact
+      python_path_keys: [root, step2_root]
+      quota: 1000
+      top_k: 1000
+      weight: 1.0
+      batch_size: 256
+    history_legacy_v1:
+      enabled: true
+      feature_name: history
+      code_path_key: history_code
+      artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
+      quota: 200
+      top_k: 200
+      weight: 3.0
+    history_query_click_v1:
+      enabled: true
+      feature_name: history_query_click
+      code_path_key: history_variants_code
+      artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
+      features: {variant: query_click}
+      quota: 200
+      top_k: 200
+      # Feature-only source: useful to CatBoost but neutral in tuned RRF.
+      weight: 0.0
+    history_query_sc_v1:
+      enabled: true
+      feature_name: history_query_sc
+      code_path_key: history_variants_code
+      artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
+      features: {variant: query_sc}
+      quota: 200
+      top_k: 200
+      weight: 2.0
+    history_query_region_v1:
+      enabled: true
+      feature_name: history_query_region
+      code_path_key: history_variants_code
+      artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
+      features: {variant: query_region_sc}
+      quota: 150
+      top_k: 150
+      # Feature-only source: its two unique hits do not justify RRF movement.
+      weight: 0.0
+
+features:
+  version: feature_v2
+  counter_version: click_events_asof_v1
+  counter_windows_days: [7, 28, 0]
+  counter_families: [region, domain, group, query]
+  enabled:
+    - retrieval_provenance_v2
+    - request_context_v2
+    - candidate_static_v2
+    - text_match_v2
+    - weekly_counters_v1
+
+ranker:
+  version: catboost_raw_sc_fast_quality_v1
+  kind: ranker_raw_sc_label
+  iterations: 900
+  depth: 8
+  learning_rate: 0.04
+  l2_leaf_reg: 7.0
+  raw_sc_scale: 1000000.0
+
+evaluation:
+  complementarity_baseline_sources: [tfidf_v1, two_tower_fps_v1]
+  high_value_quantile: 0.9

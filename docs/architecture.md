@@ -143,13 +143,20 @@ use; the first four real smoke requests matched IDs and scores exactly.
 
 ## Fast value iteration
 
-`i1_fast_value` keeps only the three productive I0 sources and uses the
-holdout-verified RRF weights/quotas `TF-IDF 0.25/500`, `Two-Tower 1.25/750`
-and `legacy history 2.0/200`. The merged cache is capped at 1,000 rows and the
-natural ranker pool at 500. Feature v2 keeps retrieval, context, static/text
-groups and only the four counter families retaining most counter importance:
-region, domain, group and query. This produces 151 ordered features instead of
-276 and halves the CatBoost rows.
+`i1_fast_value` keeps only the three productive I0 sources. Its temporal run
+showed that truncating TF-IDF/Two-Tower before fusion loses useful overlap, so
+it is retained as a measured speed control rather than a promotion candidate.
+The natural ranker pool stays at 500. Feature v2 keeps retrieval, context,
+static/text groups and only the four counter families retaining most counter
+importance: region, domain, group and query. This produces 151 ordered features
+instead of 276 and halves the CatBoost rows.
+
+`i1_fast_quality` restores TF-IDF/Two-Tower source depth to 1,000 without
+increasing the 500-row ranker pool. Query-click, query-SourceCost and
+query-region histories are materialized as ranking features; only query-SC has
+a positive tuned RRF weight. The other two remain zero-weight feature-only
+sources. The SC-aware ranker uses the raw SourceCost label and a 900-iteration
+ceiling selected from the prior temporal best iteration 845.
 
 Temporal evaluation selects the better of RRF and CatBoost by SourceCost
 Recall@50. The selected ranking method is passed to full inference. If RRF

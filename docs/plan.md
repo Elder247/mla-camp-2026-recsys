@@ -12,7 +12,8 @@ This file tracks implementation status only; it does not redefine priorities.
 | Iteration 1 candidate generators | completed, rejected by gate | temporal merged SC@500 `0.686766` is below I0 `0.704875` |
 | Iteration 1 feature v2 | completed | full temporal schema, memory and timing verified |
 | Iteration 1 SC-aware CatBoost | completed, rejected by gate | temporal CatBoost SC@50 `0.616045` is below I0 `0.622388` |
-| Iteration 1.1 fast value | in progress | compact candidate/feature set selected from temporal evidence |
+| Iteration 1.1 fast value | completed, rejected by honest gate | temporal completed in 40 minutes; RRF/CatBoost SC@50 `0.609868/0.594359` |
+| Iteration 1.2 fast quality | in progress | restore deep retrieval and only high-importance query history signals |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -147,10 +148,35 @@ Iteration 1.1 fast-value decision:
 - four counter families (region, domain, group, query) retain `6.775/7.353`
   total counter importance; six low-value families and cross features are
   removed;
-- an exact small RRF grid over cached I0 holdout candidates selected TF-IDF
-  weight/quota `0.25/500`, Two-Tower `1.25/750`, history `2.0/200`;
-- before any new model fit this blend gives RRF SC@50 `0.623522` and candidate
-  SC@500 `0.706017`, both above the accepted I0 thresholds;
+- an initial RRF grid over cached I0 candidates selected TF-IDF weight/quota
+  `0.25/500`, Two-Tower `1.25/750`, history `2.0/200`. That estimate was not
+  accepted because the cached I0 history contained banners later rejected by
+  the frozen one-million-banner submission index;
 - the run uses 151 features, a 500-row pool, safe three-worker scheduling and a
   three-hour configured wall budget. Temporal selection chooses the better of
   RRF and CatBoost; an RRF-selected full run skips features and model fit.
+
+Iteration 1.1 temporal evidence (`20260808_1230_i1_fast_temporal`):
+
+- the complete temporal pipeline finished in `39m57s`; merge train/holdout took
+  `711/379s`, features `795/440s`, and CatBoost only `142s`;
+- the valid history source has 129,344 holdout rows versus 151,025 in pre-filter
+  I0. The removed 21,681 rows are stale banners outside the submission index,
+  so restoring them would violate the run/submission contract;
+- RRF/CatBoost SC@50 is `0.609868/0.594359`; candidate SC@500 is `0.691417`;
+  the honest gate rejected full refit as designed.
+
+Iteration 1.2 fast-quality decision:
+
+- restore TF-IDF/Two-Tower depth to `1000/1000` while keeping the ranker pool at
+  500; the extra retrieval depth affects fusion but not feature-table size;
+- return query-click, query-SourceCost and query-region sources because native
+  I1 importance assigns them about `6.74`, `18.45` and non-zero importance,
+  while user/region/global generators remain excluded;
+- keep only region/domain/group/query counter families and omit cross features;
+- use the I1 `ranker_raw_sc_label` objective with 900 iterations, covering its
+  observed best iteration 845 without the original 1500-iteration ceiling;
+- a corrected RRF grid using only index-valid history selects `K=40`, weights
+  TF-IDF `0.25`, Two-Tower `1.0`, legacy history `3.0`, query-SC `2.0`; query
+  click/region remain feature-only at zero RRF weight. Expected honest RRF
+  SC@50 is `0.613506`; CatBoost is the primary improvement hypothesis.
