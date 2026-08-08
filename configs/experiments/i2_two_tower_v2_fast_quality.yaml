@@ -10,11 +10,15 @@ promotion_gate:
 
 pipeline:
   max_parallel_cg: 3
+  merge_partition_workers: 2
+  feature_partition_workers: 2
   max_wall_seconds: 10800
 
 candidates:
+  reuse_run: /home/astrofimuk/workspace/mla_two_stage/runs/20260808_1610_i2_tt_v2_temporal
   rrf_constant: 40.0
-  union_max_candidates: 2200
+  # Exact contract: only these rows can enter the frozen CatBoost pool.
+  union_max_candidates: 500
   ranker_pool: 500
   generators:
     tfidf_v1:

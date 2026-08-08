@@ -187,9 +187,11 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(cfg.candidates.generators.two_tower_v2.top_k, 1000)
         self.assertEqual(cfg.candidates.generators.two_tower_v2.batch_size, 256)
         self.assertEqual(cfg.candidates.ranker_pool, 500)
-        self.assertEqual(cfg.candidates.union_max_candidates, 2200)
+        self.assertEqual(cfg.candidates.union_max_candidates, 500)
         self.assertEqual(cfg.ranker.iterations, 900)
         self.assertEqual(cfg.pipeline.max_wall_seconds, 10800)
+        self.assertEqual(cfg.pipeline.merge_partition_workers, 2)
+        self.assertEqual(cfg.pipeline.feature_partition_workers, 2)
 
 
 if __name__ == "__main__":
