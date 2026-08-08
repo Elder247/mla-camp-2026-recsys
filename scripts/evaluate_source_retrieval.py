@@ -9,9 +9,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mla_recsys.artifacts import atomic_write_json  # noqa: E402
+from mla_recsys.artifacts import (  # noqa: E402
+    atomic_write_json,
+    fingerprint_file,
+    write_output_manifest,
+)
 from mla_recsys.candidate_cache import source_part_path  # noqa: E402
 from mla_recsys.command import load_stage_context, require_choice  # noqa: E402
+from mla_recsys.config import config_fingerprint  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
 from mla_recsys.metrics import MISS_RANK, recall_metrics, records_from_found, truth_pairs  # noqa: E402
 
@@ -123,10 +128,23 @@ def main() -> int:
     }
     output = context.store.path / "metrics" / f"retrieval_{split}_{source}.json"
     atomic_write_json(output, report)
+    write_output_manifest(
+        output,
+        stage=f"evaluate_source_retrieval_{split}_{source}",
+        artifact_version="source_retrieval_comparison_v1",
+        config_sha256=config_fingerprint(cfg),
+        inputs=[
+            fingerprint_file(context.store.path / "data" / f"{split}_requests.parquet"),
+            fingerprint_file(context.store.path / "metrics" / f"generate_{split}_{source}.json"),
+            fingerprint_file(baseline_run / "metrics" / f"generate_{split}_{baseline_source}.json"),
+        ],
+        rows=len(truth),
+        schema="source_retrieval_comparison_v1",
+        scope=str(cfg.runtime.scope),
+    )
     print(json.dumps(report, indent=2))
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
