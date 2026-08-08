@@ -187,6 +187,27 @@ python scripts/tune_rank_blend.py \
   --output /home/astrofimuk/workspace/mla_two_stage/runs/<temporal-id>/metrics/rank_blend.json
 ```
 
+## Fast full-history walk-forward
+
+The current quality cycle uses the complete 100M chronological click history
+but samples only 10% of request groups for weekly TwoTower gradient updates:
+
+```bash
+python scripts/prepare_two_tower_weekly_dataset.py \
+  --config configs/two_tower/v2_walk_forward_100m_s10.yaml --validate-only
+python scripts/prepare_two_tower_weekly_dataset.py \
+  --config configs/two_tower/v2_walk_forward_100m_s10.yaml
+python scripts/continue_walk_forward_training.py \
+  --config configs/two_tower/v2_walk_forward_100m_s10.yaml \
+  --poll-seconds 10 --wait-timeout-seconds 7200
+```
+
+After unit tests, config dry-run and live YQL validation, the expensive
+full-history pipeline smoke may be omitted with `--skip-smoke`. The supervisor
+then runs temporal validation, the automatic CatBoost/RRF blend grid and the
+gated full run sequentially. `setsid` plus `nohup` keeps all three producers
+alive when SSH or the local internet connection disappears.
+
 ## Leaderboard submission
 
 The local scorer is `http://a100-1.vla.yp-c.yandex.net:8083/`. Before upload,
