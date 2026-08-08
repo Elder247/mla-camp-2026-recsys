@@ -9,8 +9,10 @@ promotion_gate:
 
 pipeline:
   max_parallel_cg: 3
-  merge_partition_workers: 2
-  feature_partition_workers: 2
+  # The target H100 VM exposes 96 CPUs and 2 TiB RAM. Eight workers per split
+  # keep full train/test bounded while removing the former two-core bottleneck.
+  merge_partition_workers: 8
+  feature_partition_workers: 8
   max_wall_seconds: 10800
 
 walk_forward_ranker:
