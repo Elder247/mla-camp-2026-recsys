@@ -18,6 +18,7 @@ class Generator:
     quota: int
     weight: float
     features: dict[str, Any]
+    batch_size: int = 1
 
     def rank(self, example: dict[str, Any]) -> list[dict[str, Any]]:
         result = self.module.rank(
@@ -27,6 +28,22 @@ class Generator:
             top_k=self.top_k,
         )
         return [dict(item) for item in result]
+
+    def rank_batch(self, examples: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+        if hasattr(self.module, "rank_batch"):
+            result = self.module.rank_batch(
+                model=self.model,
+                examples=examples,
+                features=self.features,
+                top_k=self.top_k,
+            )
+            if len(result) != len(examples):
+                raise ValueError(
+                    f"{self.name}.rank_batch returned {len(result)} rows for "
+                    f"{len(examples)} examples"
+                )
+            return [[dict(item) for item in ranking] for ranking in result]
+        return [self.rank(example) for example in examples]
 
 
 class MultiGeneratorPipeline:
@@ -70,6 +87,7 @@ class MultiGeneratorPipeline:
                     quota=int(item.get("quota", item["top_k"])),
                     weight=float(item.get("weight", 1.0)),
                     features=configured_features,
+                    batch_size=int(item.get("batch_size", 1)),
                 )
             )
         return cls(generators, dict(config.get("fusion") or {}))

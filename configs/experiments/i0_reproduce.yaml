@@ -17,6 +17,7 @@ candidates:
       enabled: true
       feature_name: two_tower_fps
       code_path_key: step3_code
+      code_dependency_path_keys: [step2_inference_code, step2_model_code]
       artifact_path_key: step3_artifact
       python_path_keys: [root, step2_root]
       quota: 1000

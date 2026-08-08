@@ -61,6 +61,7 @@ ranker:
   log_sc_scale: 1000000.0
   raw_sc_scale: 1000000.0
   importance:
+    detailed_scopes: [offline]
     permutation_sample_rows: 20000
     permutation_repeats: 1
     permutation_top_features: 40
@@ -71,6 +72,8 @@ evaluation:
   cutoffs: [1, 5, 10, 20, 50, 100, 500, 1000]
   primary_metric: sourcecost_recall@50
   submission_top_k: 50
+  high_value_quantile: 0.9
+  complementarity_baseline_sources: []
 
 submission:
   expected_requests: 10000

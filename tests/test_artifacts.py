@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +130,39 @@ class ArtifactTest(unittest.TestCase):
             result = store.finalize("completed")
             self.assertEqual(result["status"], "completed")
             self.assertNotIn("error", result)
+
+    def test_parallel_stage_records_do_not_overwrite_each_other(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = compose_config(
+                "i0_reproduce",
+                run_id="20260807_2203_parallel_records",
+                mode="smoke",
+                overrides=[
+                    f"paths.root={root}",
+                    f"paths.runs={root / 'runs'}",
+                    f"paths.cache={root / 'cache'}",
+                    f"paths.python={sys.executable}",
+                ],
+            )
+            store = RunStore.initialize(cfg, repo_root=ROOT)
+
+            def record(index: int) -> None:
+                store.record_stage(
+                    f"parallel_{index}",
+                    {
+                        "status": "completed",
+                        "wall_seconds": float(index),
+                        "peak_rss_bytes": index,
+                    },
+                )
+
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                list(executor.map(record, range(8)))
+            result = store.read_result()
+            self.assertEqual(
+                set(result["stages"]), {f"parallel_{index}" for index in range(8)}
+            )
 
 
 if __name__ == "__main__":

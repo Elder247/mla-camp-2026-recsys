@@ -54,6 +54,18 @@ python scripts/run_pipeline.py experiment=i1_more_cg_features_sc run_id=<id> mod
 python scripts/run_pipeline.py experiment=i1_more_cg_features_sc run_id=<id> mode=full
 ```
 
+I1 uses the configured safe parallel scheduler automatically. It can be left
+detached across client/network disconnects:
+
+```bash
+nohup env -u PYTHONPATH \
+  /home/astrofimuk/workspace/step2_ce/.venv/bin/python scripts/run_pipeline.py \
+  experiment=i1_more_cg_features_sc run_id=<id> mode=full scope=full \
+  > /tmp/<id>.log 2>&1 < /dev/null &
+```
+
+Only independent CPU/split stages overlap; two GPU generators never overlap.
+
 An Iteration 1 ranker run writes three versioned diagnostics under
 `runs/<id>/reports/`: `feature_importance.csv`,
 `feature_importance_permutation.csv` and

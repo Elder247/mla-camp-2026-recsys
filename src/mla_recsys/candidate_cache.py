@@ -44,6 +44,7 @@ class SourceSpec:
     feature_name: str
     generator: Generator
     code_path: Path
+    dependency_paths: tuple[Path, ...]
     artifact_dir: Path
 
 
@@ -68,6 +69,10 @@ def load_source(cfg: DictConfig, source: str) -> SourceSpec:
     python_paths = [
         str(cfg.paths[str(key)]) for key in list(item.get("python_path_keys") or [])
     ]
+    dependency_paths = tuple(
+        Path(str(cfg.paths[str(key)]))
+        for key in list(item.get("code_dependency_path_keys") or [])
+    )
     module = load_module(code_path, python_paths)
     model = module.load_model(artifact_dir)
     defaults = {}
@@ -85,18 +90,24 @@ def load_source(cfg: DictConfig, source: str) -> SourceSpec:
         quota=int(item.quota),
         weight=float(item.weight),
         features={**defaults, **dict(item.get("features") or {})},
+        batch_size=int(item.get("batch_size", 1)),
     )
     return SourceSpec(
         name=source,
         feature_name=feature_name(cfg, source),
         generator=generator,
         code_path=code_path,
+        dependency_paths=dependency_paths,
         artifact_dir=artifact_dir,
     )
 
 
 def source_input_fingerprints(spec: SourceSpec, request_path: Path) -> list[dict[str, Any]]:
-    inputs = [fingerprint_file(request_path), fingerprint_file(spec.code_path)]
+    inputs = [
+        fingerprint_file(request_path),
+        fingerprint_file(spec.code_path),
+        *(fingerprint_file(path) for path in spec.dependency_paths),
+    ]
     if spec.artifact_dir.is_dir():
         for path in sorted(spec.artifact_dir.iterdir()):
             if path.is_file() and path.suffix.lower() in {
@@ -225,22 +236,28 @@ def generate_source_candidates(
     request_count = 0
     covered = 0
     try:
-        for request in requests:
-            request_count += 1
-            ranking = spec.generator.rank(request_example(request))
-            seen: set[int] = set()
-            accepted = 0
-            partition = stable_partition(str(request["request_id"]), partitions)
-            for source_rank, raw in enumerate(ranking, start=1):
-                banner_id = int(raw["banner_id"])
-                if banner_id in seen:
-                    continue
-                seen.add(banner_id)
-                if accepted >= spec.generator.quota:
-                    break
-                accepted += 1
-                sink.append(partition, candidate_row(request, raw, source_rank))
-            covered += int(accepted > 0)
+        materialized = list(requests)
+        batch_size = max(1, int(spec.generator.batch_size))
+        for start in range(0, len(materialized), batch_size):
+            batch = materialized[start : start + batch_size]
+            rankings = spec.generator.rank_batch(
+                [request_example(request) for request in batch]
+            )
+            for request, ranking in zip(batch, rankings):
+                request_count += 1
+                seen: set[int] = set()
+                accepted = 0
+                partition = stable_partition(str(request["request_id"]), partitions)
+                for source_rank, raw in enumerate(ranking, start=1):
+                    banner_id = int(raw["banner_id"])
+                    if banner_id in seen:
+                        continue
+                    seen.add(banner_id)
+                    if accepted >= spec.generator.quota:
+                        break
+                    accepted += 1
+                    sink.append(partition, candidate_row(request, raw, source_rank))
+                covered += int(accepted > 0)
         sink.close()
     except BaseException:
         sink.abort()
@@ -255,6 +272,8 @@ def generate_source_candidates(
         "rows": sum(sink.rows),
         "partition_rows": sink.rows,
         "wall_seconds": time.monotonic() - started,
+        "batch_size": int(spec.generator.batch_size),
+        "batch_implementation": hasattr(spec.generator.module, "rank_batch"),
     }
 
 
@@ -299,4 +318,3 @@ def finalize_source_manifests(
             schema=str(SOURCE_SCHEMA),
             scope=scope,
         )
-

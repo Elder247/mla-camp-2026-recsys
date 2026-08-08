@@ -156,72 +156,80 @@ def main() -> int:
         else "Importances"
     )
 
-    importance_table = validation if validation_split is not None else train
-    sample_limit = int(cfg.ranker.importance.permutation_sample_rows)
-    sample_group_ids = importance_table["group_id"].combine_chunks().to_numpy(
-        zero_copy_only=False
-    )
-    sample_indices = first_complete_groups(sample_group_ids, sample_limit)
-    sampled = importance_table.take(pa.array(sample_indices))
-    sampled_matrix = matrix(sampled, names)
-    sampled_labels = (
-        sampled[label_column].combine_chunks().to_numpy(zero_copy_only=False)
-        / label_scale
-    )
-    sampled_groups = sampled["group_id"].combine_chunks().to_numpy(zero_copy_only=False)
-    standard_by_name = {
-        str(row[importance_name_key]): float(row[importance_value_key])
-        for row in importance_records
-    }
-    permutation_top = int(cfg.ranker.importance.get("permutation_top_features", 40))
-    selected = sorted(
-        range(len(names)),
-        key=lambda index: -standard_by_name.get(names[index], 0.0),
-    )[:permutation_top]
-    permutation_baseline, permutation_rows = permutation_importance(
-        model,
-        sampled_matrix,
-        sampled_labels,
-        sampled_groups,
-        names,
-        feature_indices=selected,
-        repeats=int(cfg.ranker.importance.permutation_repeats),
-        top_k=50,
-        seed=int(cfg.ranker.random_seed),
-    )
-    import pandas as pd
+    detailed = str(cfg.runtime.scope) in [
+        str(value) for value in cfg.ranker.importance.detailed_scopes
+    ]
+    metadata["importance"] = {"detailed": detailed}
+    if detailed:
+        importance_table = validation if validation_split is not None else train
+        sample_limit = int(cfg.ranker.importance.permutation_sample_rows)
+        sample_group_ids = importance_table["group_id"].combine_chunks().to_numpy(
+            zero_copy_only=False
+        )
+        sample_indices = first_complete_groups(sample_group_ids, sample_limit)
+        sampled = importance_table.take(pa.array(sample_indices))
+        sampled_matrix = matrix(sampled, names)
+        sampled_labels = (
+            sampled[label_column].combine_chunks().to_numpy(zero_copy_only=False)
+            / label_scale
+        )
+        sampled_groups = sampled["group_id"].combine_chunks().to_numpy(
+            zero_copy_only=False
+        )
+        standard_by_name = {
+            str(row[importance_name_key]): float(row[importance_value_key])
+            for row in importance_records
+        }
+        permutation_top = int(
+            cfg.ranker.importance.get("permutation_top_features", 40)
+        )
+        selected = sorted(
+            range(len(names)),
+            key=lambda index: -standard_by_name.get(names[index], 0.0),
+        )[:permutation_top]
+        permutation_baseline, permutation_rows = permutation_importance(
+            model,
+            sampled_matrix,
+            sampled_labels,
+            sampled_groups,
+            names,
+            feature_indices=selected,
+            repeats=int(cfg.ranker.importance.permutation_repeats),
+            top_k=50,
+            seed=int(cfg.ranker.random_seed),
+        )
+        import pandas as pd
 
-    pd.DataFrame(permutation_rows).to_csv(
-        context.store.path / "reports" / "feature_importance_permutation.csv",
-        index=False,
-    )
-    shap_rows = min(int(cfg.ranker.importance.shap_sample_rows), sampled.num_rows)
-    shap_pool = Pool(
-        sampled_matrix[:shap_rows],
-        feature_names=names,
-    )
-    shap_values = np.asarray(
-        model.get_feature_importance(type="ShapValues", data=shap_pool)
-    )[:, :-1]
-    shap_summary = sorted(
-        (
-            {"feature": name, "mean_abs_shap": float(value)}
-            for name, value in zip(names, np.mean(np.abs(shap_values), axis=0))
-        ),
-        key=lambda row: -row["mean_abs_shap"],
-    )[: int(cfg.ranker.importance.shap_top_k)]
-    pd.DataFrame(shap_summary).to_csv(
-        context.store.path / "reports" / "feature_importance_shap_top20.csv",
-        index=False,
-    )
-    metadata["importance"] = {
-        "permutation_metric": "sourcecost_capture@50_within_natural_positive_groups",
-        "permutation_baseline": permutation_baseline,
-        "permutation_sample_rows": sampled.num_rows,
-        "permutation_features": len(selected),
-        "shap_sample_rows": shap_rows,
-        "shap_top_k": int(cfg.ranker.importance.shap_top_k),
-    }
+        pd.DataFrame(permutation_rows).to_csv(
+            context.store.path / "reports" / "feature_importance_permutation.csv",
+            index=False,
+        )
+        shap_rows = min(int(cfg.ranker.importance.shap_sample_rows), sampled.num_rows)
+        shap_pool = Pool(sampled_matrix[:shap_rows], feature_names=names)
+        shap_values = np.asarray(
+            model.get_feature_importance(type="ShapValues", data=shap_pool)
+        )[:, :-1]
+        shap_summary = sorted(
+            (
+                {"feature": name, "mean_abs_shap": float(value)}
+                for name, value in zip(names, np.mean(np.abs(shap_values), axis=0))
+            ),
+            key=lambda row: -row["mean_abs_shap"],
+        )[: int(cfg.ranker.importance.shap_top_k)]
+        pd.DataFrame(shap_summary).to_csv(
+            context.store.path / "reports" / "feature_importance_shap_top20.csv",
+            index=False,
+        )
+        metadata["importance"].update(
+            {
+                "permutation_metric": "sourcecost_capture@50_within_natural_positive_groups",
+                "permutation_baseline": permutation_baseline,
+                "permutation_sample_rows": sampled.num_rows,
+                "permutation_features": len(selected),
+                "shap_sample_rows": shap_rows,
+                "shap_top_k": int(cfg.ranker.importance.shap_top_k),
+            }
+        )
     atomic_write_json(model_dir / "catboost.json", metadata)
     inputs = [
         fingerprint_file(path)

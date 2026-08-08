@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import json
+import math
 from collections import Counter
 from itertools import combinations
 from pathlib import Path
@@ -15,6 +17,74 @@ from omegaconf import DictConfig
 from .candidate_cache import enabled_sources, source_part_path
 from .data import read_request_parquet
 from .metrics import MISS_RANK, recall_metrics, records_from_found, truth_pairs
+
+
+def source_gate_rows(
+    *,
+    truth: dict[tuple[str, int], float],
+    found: dict[str, dict[tuple[str, int], int]],
+    sources: list[str],
+    metrics: dict[str, dict[str, dict[str, Any]]],
+    baseline_sources: list[str],
+    high_value_quantile: float,
+) -> list[dict[str, Any]]:
+    total_cost = sum(truth.values())
+    baseline_pairs = {
+        pair
+        for pair in truth
+        if any(pair in found[source] for source in baseline_sources)
+    }
+    baseline_cost = sum(truth[pair] for pair in baseline_pairs)
+    ordered_costs = sorted(truth.values())
+    quantile_index = min(
+        len(ordered_costs) - 1,
+        max(
+            0,
+            int(math.ceil(high_value_quantile * max(0, len(ordered_costs) - 1))),
+        ),
+    )
+    threshold = ordered_costs[quantile_index] if ordered_costs else float("inf")
+    output = []
+    for source in sources:
+        only_pairs = [
+            pair
+            for pair in truth
+            if pair in found[source]
+            and not any(pair in found[other] for other in sources if other != source)
+        ]
+        unique_cost = sum(truth[pair] for pair in only_pairs)
+        added_pairs = {pair for pair in truth if pair in found[source]} - baseline_pairs
+        added_cost = sum(truth[pair] for pair in added_pairs)
+        high_value_pairs = [pair for pair in only_pairs if truth[pair] >= threshold]
+        high_value_truth = [pair for pair in truth if truth[pair] >= threshold]
+        high_value_found = [pair for pair in high_value_truth if pair in found[source]]
+        high_value_total_cost = sum(truth[pair] for pair in high_value_truth)
+        output.append(
+            {
+                "source": source,
+                "unique_clicked_banners": len(only_pairs),
+                "unique_sourcecost": unique_cost,
+                "unique_sourcecost_share": unique_cost / total_cost if total_cost else 0.0,
+                "unique_high_value_hits": len(high_value_pairs),
+                "high_value_quantile": high_value_quantile,
+                "high_value_hits": len(high_value_found),
+                "high_value_sourcecost_recall": (
+                    sum(truth[pair] for pair in high_value_found) / high_value_total_cost
+                    if high_value_total_cost
+                    else 0.0
+                ),
+                "incremental_oracle_hits_vs_baseline": len(added_pairs),
+                "incremental_oracle_sourcecost": added_cost,
+                "incremental_oracle_sc_share_vs_baseline": (
+                    added_cost / total_cost if total_cost else 0.0
+                ),
+                "baseline_oracle_sc_share": baseline_cost / total_cost if total_cost else 0.0,
+                "recall_at_50": metrics[source]["50"]["recall"],
+                "sourcecost_recall_at_50": metrics[source]["50"]["sourcecost_recall"],
+                "sourcecost_recall_at_500": metrics[source]["500"]["sourcecost_recall"],
+            }
+        )
+    return output
 
 
 def candidate_report(
@@ -75,28 +145,43 @@ def candidate_report(
         for name, ranks in found.items()
     }
     membership = Counter()
-    unique_rows = []
-    total_cost = sum(truth.values())
     for pair, source_cost in truth.items():
         present = tuple(sorted(source for source in sources if pair in found[source]))
         membership[present or ("miss",)] += 1
-    for source in sources:
-        only_pairs = [
-            pair
-            for pair in truth
-            if pair in found[source]
-            and not any(pair in found[other] for other in sources if other != source)
-        ]
-        unique_cost = sum(truth[pair] for pair in only_pairs)
-        unique_rows.append(
+    configured_baseline = cfg.evaluation.get("complementarity_baseline_sources", [])
+    baseline_sources = [
+        str(value) for value in (configured_baseline or sources[:2])
+    ]
+    unknown_baseline = set(baseline_sources) - set(sources)
+    if unknown_baseline:
+        raise ValueError(f"Unknown complementarity baseline sources: {unknown_baseline}")
+    unique_rows = source_gate_rows(
+        truth=truth,
+        found=found,
+        sources=sources,
+        metrics=metrics,
+        baseline_sources=baseline_sources,
+        high_value_quantile=float(cfg.evaluation.get("high_value_quantile", 0.9)),
+    )
+    for row in unique_rows:
+        source = str(row["source"])
+        generation_path = run_path / "metrics" / f"generate_{split}_{source}.json"
+        generation = json.loads(generation_path.read_text(encoding="utf-8"))
+        source_size = sum(
+            path.stat().st_size
+            for path in (run_path / "candidates" / split / source).glob("part-*.parquet")
+        )
+        row.update(
             {
-                "source": source,
-                "unique_clicked_banners": len(only_pairs),
-                "unique_sourcecost": unique_cost,
-                "unique_sourcecost_share": unique_cost / total_cost if total_cost else 0.0,
-                "recall_at_50": metrics[source]["50"]["recall"],
-                "sourcecost_recall_at_50": metrics[source]["50"]["sourcecost_recall"],
-                "sourcecost_recall_at_500": metrics[source]["500"]["sourcecost_recall"],
+                "request_coverage": float(generation["coverage"]),
+                "generated_rows": int(generation["rows"]),
+                "rows_per_request": (
+                    float(generation["rows"]) / float(generation["requests"])
+                    if generation["requests"]
+                    else 0.0
+                ),
+                "generation_wall_seconds": float(generation["wall_seconds"]),
+                "parquet_bytes": source_size,
             }
         )
     overlap = {
@@ -112,6 +197,7 @@ def candidate_report(
         "metrics": metrics,
         "source_membership": {"+".join(key): value for key, value in sorted(membership.items())},
         "mean_jaccard_top50": overlap,
+        "complementarity_baseline_sources": baseline_sources,
     }
     return report, unique_rows
 
@@ -197,4 +283,3 @@ def write_complementarity_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(target, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-

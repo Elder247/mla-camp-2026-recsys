@@ -14,6 +14,9 @@ paths:
   tfidf_code: ${paths.tfidf_root}/step1_tfidf/inference.py
   tfidf_artifact: /home/astrofimuk/workspace/tfidf_step1/data/artifacts/step1_tfidf
   step3_code: ${paths.root}/code_maxim/step3_fps/inference.py
+  two_tower_batch_code: ${paths.root}/generators/two_tower_batch.py
+  step2_inference_code: ${paths.step2_root}/code_maxim/step2_ce/inference.py
+  step2_model_code: ${paths.step2_root}/code_maxim/step2_ce/model.py
   step3_artifact: ${paths.immutable_artifacts}/step3_fps
   history_code: ${paths.root}/generators/history.py
   history_variants_code: ${paths.root}/generators/history_variants.py

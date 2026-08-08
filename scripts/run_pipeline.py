@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import subprocess
 import sys
@@ -50,6 +51,97 @@ def stage_commands(
     return commands
 
 
+def _candidate_source(command: list[str]) -> str:
+    return next(value.split("=", 1)[1] for value in command if value.startswith("cg="))
+
+
+def execution_groups(
+    cfg: object,
+    commands: list[tuple[str, list[str]]],
+) -> list[list[tuple[str, list[str]]]]:
+    """Group only independent stages; never overlap two GPU generators."""
+
+    workers = max(1, int(cfg.pipeline.max_parallel_cg))
+    if workers == 1:
+        return [[command] for command in commands]
+    groups: list[list[tuple[str, list[str]]]] = []
+    index = 0
+    while index < len(commands):
+        stage = commands[index][0]
+        if stage.startswith("generate_"):
+            end = index
+            while end < len(commands) and commands[end][0].startswith("generate_"):
+                end += 1
+            gpu: list[tuple[str, list[str]]] = []
+            cpu: list[tuple[str, list[str]]] = []
+            for command in commands[index:end]:
+                source = _candidate_source(command[1])
+                resource = str(cfg.candidates.generators[source].get("resource", "cpu"))
+                (gpu if resource == "gpu" else cpu).append(command)
+            cpu.sort(
+                key=lambda command: -int(
+                    cfg.candidates.generators[_candidate_source(command[1])].get(
+                        "parallel_priority", 0
+                    )
+                )
+            )
+            while gpu or cpu:
+                group: list[tuple[str, list[str]]] = []
+                if gpu:
+                    group.append(gpu.pop(0))
+                count = min(workers - len(group), len(cpu))
+                group.extend(cpu[:count])
+                del cpu[:count]
+                groups.append(group)
+            index = end
+            continue
+        if stage.startswith("merge_candidates_"):
+            group = []
+            while index < len(commands) and commands[index][0].startswith(
+                "merge_candidates_"
+            ):
+                group.append(commands[index])
+                index += 1
+            groups.extend(
+                group[offset : offset + workers]
+                for offset in range(0, len(group), workers)
+            )
+            continue
+        if stage.startswith("build_features_"):
+            group = []
+            while index < len(commands) and commands[index][0].startswith(
+                "build_features_"
+            ):
+                group.append(commands[index])
+                index += 1
+            groups.extend(
+                group[offset : offset + workers]
+                for offset in range(0, len(group), workers)
+            )
+            continue
+        groups.append([commands[index]])
+        index += 1
+    return groups
+
+
+def pending_commands(
+    store: RunStore,
+    group: list[tuple[str, list[str]]],
+    *,
+    resume: bool,
+) -> list[tuple[str, list[str]]]:
+    pending = []
+    for stage, command in group:
+        previous = store.path / "stages" / f"{stage}.json"
+        if previous.is_file() and resume:
+            value = json.loads(previous.read_text(encoding="utf-8"))
+            if value.get("status") == "completed":
+                print(f"resume: skip completed stage {stage}")
+                continue
+        pending.append((stage, command))
+    return pending
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the configured ML Camp pipeline as isolated subprocess stages",
@@ -85,14 +177,28 @@ def main() -> int:
     store = RunStore.initialize(cfg, repo_root=ROOT, resume=not args.no_resume)
     runner = StageRunner(store)
     try:
-        for stage, command in commands:
-            previous = store.path / "stages" / f"{stage}.json"
-            if previous.is_file() and bool(cfg.runtime.resume):
-                value = json.loads(previous.read_text(encoding="utf-8"))
-                if value.get("status") == "completed":
-                    print(f"resume: skip completed stage {stage}")
-                    continue
-            runner.run(stage, command, cwd=ROOT)
+        for group in execution_groups(cfg, commands):
+            pending = pending_commands(
+                store, group, resume=bool(cfg.runtime.resume)
+            )
+            if len(pending) == 1:
+                stage, command = pending[0]
+                runner.run(stage, command, cwd=ROOT)
+            elif pending:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=len(pending)
+                ) as executor:
+                    futures = [
+                        executor.submit(
+                            StageRunner(store).run,
+                            stage,
+                            command,
+                            cwd=ROOT,
+                        )
+                        for stage, command in pending
+                    ]
+                    for future in futures:
+                        future.result()
     except (OSError, subprocess.CalledProcessError) as error:
         store.finalize("failed", error=type(error).__name__)
         return 1

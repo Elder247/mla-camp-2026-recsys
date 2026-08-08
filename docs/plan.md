@@ -98,6 +98,18 @@ Execution reliability follow-up:
 - a disconnected SSH/stdout consumer no longer raises `BrokenPipeError` in the
   orchestrator; stage output continues into the durable run log.
 
+Acceleration contract prepared for the selected I1 full run:
+
+- configured three-worker scheduler overlaps only independent stages, with a
+  cross-process run metadata lock and at most one GPU generator per group;
+- train/test merge and feature stages run as split pairs;
+- Two-Tower batch inference preserves exact single-request top-50 IDs and
+  scores on 4/4 real smoke requests;
+- detailed permutation/SHAP reports stay in offline scope and are not repeated
+  during full refit; standard model importance remains available;
+- 41/41 tests pass in an isolated VM copy without changing the active temporal
+  run.
+
 Iteration 1 feature/ranker smoke evidence (`20260808_1230_i1_v2_smoke`):
 
 - completed end-to-end at `2026-08-08T08:37:34+03:00`, after a cache-safe

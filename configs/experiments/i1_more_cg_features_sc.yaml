@@ -2,12 +2,16 @@ experiment:
   name: i1_more_cg_features_sc
   description: Independent history/popularity CGs, feature v2 and SC-aware CatBoost
 
+pipeline:
+  max_parallel_cg: 3
+
 candidates:
   union_max_candidates: 4000
   ranker_pool: 1000
   generators:
     tfidf_v1:
       enabled: true
+      parallel_priority: 100
       feature_name: tfidf
       code_path_key: tfidf_code
       artifact_path_key: tfidf_artifact
@@ -17,13 +21,16 @@ candidates:
       weight: 0.75
     two_tower_fps_v1:
       enabled: true
+      resource: gpu
       feature_name: two_tower_fps
-      code_path_key: step3_code
+      code_path_key: two_tower_batch_code
+      code_dependency_path_keys: [step2_inference_code, step2_model_code]
       artifact_path_key: step3_artifact
       python_path_keys: [root, step2_root]
       quota: 1000
       top_k: 1000
       weight: 1.25
+      batch_size: 256
     history_query_click_v1:
       enabled: true
       feature_name: history_query_click
@@ -113,3 +120,7 @@ ranker:
   learning_rate: 0.04
   l2_leaf_reg: 7.0
   raw_sc_scale: 1000000.0
+
+evaluation:
+  complementarity_baseline_sources: [tfidf_v1, two_tower_fps_v1]
+  high_value_quantile: 0.9

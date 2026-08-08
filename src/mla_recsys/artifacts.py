@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -21,9 +22,28 @@ from omegaconf import DictConfig, OmegaConf
 
 from .config import config_fingerprint, to_plain_dict, validate_run_id
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
+
 
 TOKEN_PATTERN = re.compile(r"(?:y[01]_|t[01]_|AQAD-)[A-Za-z0-9_\-]+")
 MANIFEST_SUFFIX = ".manifest.json"
+_PROCESS_LOCK = threading.RLock()
+
+
+@contextmanager
+def _run_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _PROCESS_LOCK, path.open("a+", encoding="utf-8") as target:
+        if fcntl is not None:
+            fcntl.flock(target.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(target.fileno(), fcntl.LOCK_UN)
 
 
 def utc_now() -> str:
@@ -334,13 +354,14 @@ class RunStore:
                 raise FileExistsError(f"Run already exists: {store.path}")
             if not manifest_path.is_file():
                 raise RuntimeError(f"Existing run has no manifest: {store.path}")
-            previous = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if previous.get("config_sha256") != store.config_sha256:
-                raise RuntimeError(
-                    f"Run config fingerprint mismatch for {store.run_id}: "
-                    f"{previous.get('config_sha256')} != {store.config_sha256}"
-                )
-            record_resume_git_state(manifest_path, repo_root)
+            with _run_lock(store.path / ".run.lock"):
+                previous = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if previous.get("config_sha256") != store.config_sha256:
+                    raise RuntimeError(
+                        f"Run config fingerprint mismatch for {store.run_id}: "
+                        f"{previous.get('config_sha256')} != {store.config_sha256}"
+                    )
+                record_resume_git_state(manifest_path, repo_root)
             return store
 
         for relative in (
@@ -387,56 +408,59 @@ class RunStore:
         return json.loads((self.path / "result.json").read_text(encoding="utf-8"))
 
     def update_result(self, **updates: Any) -> dict[str, Any]:
-        value = self.read_result()
-        value.update(updates)
-        atomic_write_json(self.path / "result.json", value)
+        with _run_lock(self.path / ".run.lock"):
+            value = self.read_result()
+            value.update(updates)
+            atomic_write_json(self.path / "result.json", value)
         return value
 
     def record_stage(self, stage: str, value: dict[str, Any]) -> None:
-        atomic_write_json(self.path / "stages" / f"{stage}.json", value)
-        result = self.read_result()
-        result.setdefault("stages", {})[stage] = value
-        atomic_write_json(self.path / "result.json", result)
-        timing_path = self.path / "reports" / "timing.csv"
-        rows: list[dict[str, Any]] = []
-        if timing_path.is_file():
-            with timing_path.open(encoding="utf-8", newline="") as source:
-                rows = list(csv.DictReader(source))
-        rows = [row for row in rows if row.get("stage") != stage]
-        rows.append(
-            {
-                "stage": stage,
-                "status": value.get("status"),
-                "wall_seconds": value.get("wall_seconds"),
-                "peak_rss_bytes": value.get("peak_rss_bytes"),
-            }
-        )
-        timing_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix=".timing.", dir=timing_path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="") as target:
-                writer = csv.DictWriter(
-                    target,
-                    fieldnames=["stage", "status", "wall_seconds", "peak_rss_bytes"],
-                )
-                writer.writeheader()
-                writer.writerows(rows)
-                target.flush()
-                os.fsync(target.fileno())
-            os.replace(temporary, timing_path)
-        except BaseException:
+        with _run_lock(self.path / ".run.lock"):
+            atomic_write_json(self.path / "stages" / f"{stage}.json", value)
+            result = self.read_result()
+            result.setdefault("stages", {})[stage] = value
+            atomic_write_json(self.path / "result.json", result)
+            timing_path = self.path / "reports" / "timing.csv"
+            rows: list[dict[str, Any]] = []
+            if timing_path.is_file():
+                with timing_path.open(encoding="utf-8", newline="") as source:
+                    rows = list(csv.DictReader(source))
+            rows = [row for row in rows if row.get("stage") != stage]
+            rows.append(
+                {
+                    "stage": stage,
+                    "status": value.get("status"),
+                    "wall_seconds": value.get("wall_seconds"),
+                    "peak_rss_bytes": value.get("peak_rss_bytes"),
+                }
+            )
+            timing_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".timing.", dir=timing_path.parent)
             try:
-                os.unlink(temporary)
-            except FileNotFoundError:
-                pass
-            raise
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as target:
+                    writer = csv.DictWriter(
+                        target,
+                        fieldnames=["stage", "status", "wall_seconds", "peak_rss_bytes"],
+                    )
+                    writer.writeheader()
+                    writer.writerows(rows)
+                    target.flush()
+                    os.fsync(target.fileno())
+                os.replace(temporary, timing_path)
+            except BaseException:
+                try:
+                    os.unlink(temporary)
+                except FileNotFoundError:
+                    pass
+                raise
 
     def finalize(self, status: str, **updates: Any) -> dict[str, Any]:
         if status not in {"completed", "failed"}:
             raise ValueError(status)
-        value = self.read_result()
-        if status == "completed":
-            value.pop("error", None)
-        value.update(status=status, finished_at=utc_now(), **updates)
-        atomic_write_json(self.path / "result.json", value)
+        with _run_lock(self.path / ".run.lock"):
+            value = self.read_result()
+            if status == "completed":
+                value.pop("error", None)
+            value.update(status=status, finished_at=utc_now(), **updates)
+            atomic_write_json(self.path / "result.json", value)
         return value

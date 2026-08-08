@@ -128,3 +128,14 @@ process itself instead of reusing the process-wide historical maximum. A
 dropped SSH/stdout stream disables echo but does not terminate the child or
 its durable log. Candidate sources run sequentially by default
 (`max_parallel_cg: 1`); GPU sources must not overlap.
+
+Iteration 1 raises the configured worker limit to three. The scheduler groups
+only dependency-independent work, holds GPU generators to one per group, runs
+the two split merges together, and runs the two split feature builds together.
+Run/result/timing writes are protected by a cross-process file lock, while
+every child still owns its log, stage JSON, metrics and manifests.
+
+The I1 Two-Tower wrapper encodes query batches and performs the same exact
+matrix scan/top-k against the frozen candidate embeddings. Batch size is a
+source config value. Direct batch-vs-single top-50 parity is mandatory before
+use; the first four real smoke requests matched IDs and scores exactly.
