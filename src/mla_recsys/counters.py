@@ -139,7 +139,7 @@ class CounterLookup:
         banner = scalar_key(candidate.get("banner_id"))
         group = scalar_key(candidate.get("group_id"))
         domain = str(candidate.get("domain") or "")
-        query = stable_text_key(request.get("query"))
+        query = str(request.get("query_key") or stable_text_key(request.get("query")))
         region = scalar_key(request.get("region_id"))
         user = scalar_key(request.get("crypta_id_v2"))
         return {

@@ -109,6 +109,13 @@ Configured 7-day, 28-day and all-history windows cover banner, group, domain,
 query, region, user and selected pair families. Every feature parquet manifest
 fingerprints both the counter parquet and its scope manifest.
 
+The Iteration 1 ranker consumes `label_raw_sc / raw_sc_scale`; the scale is one
+global configured constant and does not change relative target values. It does
+not log, clip or apply a second heuristic weight. The log-SourceCost label
+remains a separately configured control. Training writes PredictionValuesChange
+importance, SourceCost-capture@50 permutation importance on complete holdout
+groups, and a top-20 mean-absolute-SHAP summary.
+
 ## Memory and execution
 
 `scripts/run_pipeline.py` is a standard-library orchestrator. It launches each

@@ -11,7 +11,7 @@ This file tracks implementation status only; it does not redefine priorities.
 | Iteration 0 baseline pipeline | completed | temporal/full runs, natural pool, cache parity, strict 10k submission |
 | Iteration 1 candidate generators | in progress | implementation/smoke complete; full temporal complementarity and SC ceiling pending |
 | Iteration 1 feature v2 | in progress | implementation + unit contract complete; VM smoke/schema/memory pending |
-| Iteration 1 SC-aware CatBoost | pending | honest SC@50 win, importance, validated batch prediction |
+| Iteration 1 SC-aware CatBoost | in progress | raw-label/importance contract complete; honest smoke + temporal gate pending |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -79,4 +79,14 @@ Iteration 1 feature-v2 implementation evidence:
   inference cutoff semantics;
 - counters are documented as click/event counts because no impression stream
   is available; no unsupported CTR feature is synthesized;
-- 32/32 tests pass before the feature-v2 VM smoke.
+- resolved I0/I1 schemas contain 37/276 unique ordered features;
+- 35/35 tests pass before the feature-v2 VM smoke.
+
+Iteration 1 CatBoost implementation evidence:
+
+- `ranker_raw_sc_label` consumes raw SourceCost divided only by the configured
+  global scale; a unit test distinguishes it from the log-SC control;
+- metadata records the exact label column and scale;
+- standard, permutation and top-20 SHAP reports are produced by the isolated
+  train stage. Permutation uses complete request groups and direct
+  SourceCost-capture@50, not AUC or train loss.

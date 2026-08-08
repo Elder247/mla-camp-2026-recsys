@@ -11,7 +11,12 @@ import pyarrow.parquet as pq
 from omegaconf import DictConfig
 
 from .candidate_cache import feature_name
-from .counters import CounterLookup, counter_feature_values, url_domain
+from .counters import (
+    CounterLookup,
+    counter_feature_values,
+    stable_text_key,
+    url_domain,
+)
 from .features import extract_feature_rows, feature_names
 from .training_data import attach_targets, freeze_natural_pool
 
@@ -243,7 +248,11 @@ def build_feature_partition(
         if counter_lookup is not None:
             if frozen_counter_cutoff is None:
                 raise ValueError("frozen_counter_cutoff is required with counter_lookup")
-            counter_request = {"query": request["query"], **example["context"]}
+            counter_request = {
+                "query": request["query"],
+                "query_key": stable_text_key(request["query"]),
+                **example["context"],
+            }
             counter_request["show_time"] = request.get("show_time")
             for candidate in candidates:
                 candidate["counter_features"] = counter_feature_values(
