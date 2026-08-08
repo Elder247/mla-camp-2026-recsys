@@ -87,9 +87,9 @@ Iteration 1 CatBoost implementation evidence:
 - `ranker_raw_sc_label` consumes raw SourceCost divided only by the configured
   global scale; a unit test distinguishes it from the log-SC control;
 - metadata records the exact label column and scale;
-- standard, permutation and top-20 SHAP reports are produced by the isolated
-  train stage. Permutation uses complete request groups and direct
-  SourceCost-capture@50, not AUC or train loss.
+- the isolated train stage writes native CatBoost `PredictionValuesChange`
+  importance. SHAP and permutation importance were removed before the full
+  temporal run to avoid a redundant groupwise analysis pass.
 
 Execution reliability follow-up:
 
@@ -105,8 +105,7 @@ Acceleration contract prepared for the selected I1 full run:
 - train/test merge and feature stages run as split pairs;
 - Two-Tower batch inference preserves exact single-request top-50 IDs and
   scores on 4/4 real smoke requests;
-- detailed permutation/SHAP reports stay in offline scope and are not repeated
-  during full refit; standard model importance remains available;
+- only native CatBoost importance is produced in either scope;
 - 41/41 tests pass in an isolated VM copy without changing the active temporal
   run.
 
@@ -119,8 +118,9 @@ Iteration 1 feature/ranker smoke evidence (`20260808_1230_i1_v2_smoke`):
   276 unique ordered features and zero NaN/Inf values;
 - cache parity covers 40/40 requests with zero mismatches; 36/36 post-run tests
   pass;
-- raw-SC CatBoost metadata records `label_raw_sc` and scale `1,000,000`; all
-  standard/permutation/SHAP reports exist;
+- raw-SC CatBoost metadata records `label_raw_sc` and scale `1,000,000`; the
+  smoke run produced the earlier diagnostic reports, while production runs now
+  keep only native CatBoost importance;
 - feature stages take 15.5/15.4 seconds with 2.66 GiB stage RSS; training and
   reports take 7.3 seconds with 661 MiB RSS;
 - tiny-sample RRF/CatBoost SC@50 is `0.510672/0.504502`. This is contract-only

@@ -66,11 +66,11 @@ nohup env -u PYTHONPATH \
 
 Only independent CPU/split stages overlap; two GPU generators never overlap.
 
-An Iteration 1 ranker run writes three versioned diagnostics under
-`runs/<id>/reports/`: `feature_importance.csv`,
-`feature_importance_permutation.csv` and
-`feature_importance_shap_top20.csv`. Selection still uses
-`metrics/holdout.json` SourceCost Recall, not CatBoost's internal objective.
+An Iteration 1 ranker run writes the native CatBoost
+`PredictionValuesChange` report to
+`runs/<id>/reports/feature_importance.csv`. SHAP and permutation importance are
+disabled. Selection still uses `metrics/holdout.json` SourceCost Recall, not
+CatBoost's internal objective.
 
 Legacy `./run.sh` commands remain available for frozen-baseline parity but are
 not the experiment contract.
