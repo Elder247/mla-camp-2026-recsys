@@ -5,7 +5,12 @@ experiment:
 promotion_gate:
   candidate_sourcecost_recall_at_500: 0.6906686
   ranker_sourcecost_recall_at_50: 0.6160454
-  ranking_candidates: [rrf, catboost]
+  ranking_candidates: [rrf, catboost, blend]
+
+submission:
+  blend:
+    method: rank_linear
+    catboost_weight: 0.75
 
 pipeline:
   max_parallel_cg: 3

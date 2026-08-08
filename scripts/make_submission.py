@@ -22,6 +22,7 @@ from mla_recsys.artifacts import (  # noqa: E402
 from mla_recsys.command import load_stage_context  # noqa: E402
 from mla_recsys.config import config_fingerprint  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
+from mla_recsys.rank_blend import rank_linear_order  # noqa: E402
 
 
 def matrix(table: pa.Table, names: list[str]) -> np.ndarray:
@@ -54,6 +55,8 @@ def rrf_predictions(run_path: Path) -> tuple[dict[str, tuple[int, list[int]]], l
 
 def catboost_predictions(
     run_path: Path,
+    *,
+    blend_weight: float | None = None,
 ) -> tuple[dict[str, tuple[int, list[int]]], list[Path]]:
     metadata = json.loads(
         (run_path / "models" / "catboost.json").read_text(encoding="utf-8")
@@ -85,7 +88,10 @@ def catboost_predictions(
                 )
             )
         for request_id, values in grouped.items():
-            values.sort(key=lambda value: (-value[0], value[1], value[2]))
+            if blend_weight is None:
+                values.sort(key=lambda value: (-value[0], value[1], value[2]))
+            else:
+                values = rank_linear_order(values, catboost_weight=blend_weight)
             predictions[request_id] = (
                 values[0][3],
                 [value[2] for value in values[:50]],
@@ -103,6 +109,11 @@ def main() -> int:
         predictions, prediction_inputs = rrf_predictions(context.store.path)
     elif ranking == "catboost":
         predictions, prediction_inputs = catboost_predictions(context.store.path)
+    elif ranking == "blend":
+        predictions, prediction_inputs = catboost_predictions(
+            context.store.path,
+            blend_weight=float(cfg.submission.blend.catboost_weight),
+        )
     else:
         raise ValueError(f"Unsupported submission ranking: {ranking}")
 
@@ -128,7 +139,7 @@ def main() -> int:
     with atomic_output_path(output) as temporary:
         pq.write_table(table, temporary, compression="zstd")
     inputs = [fingerprint_file(path) for path in prediction_inputs]
-    if ranking == "catboost":
+    if ranking in {"catboost", "blend"}:
         inputs.insert(0, fingerprint_file(context.store.path / "models" / "catboost.cbm"))
     write_output_manifest(
         output,

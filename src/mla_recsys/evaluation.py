@@ -17,6 +17,7 @@ from omegaconf import DictConfig
 from .candidate_cache import enabled_sources, source_part_path
 from .data import read_request_parquet
 from .metrics import MISS_RANK, recall_metrics, records_from_found, truth_pairs
+from .rank_blend import rank_linear_order
 
 
 def source_gate_rows(
@@ -224,6 +225,7 @@ def ranker_report(
     truth = truth_pairs(requests)
     rrf_found: dict[tuple[str, int], int] = {}
     ranker_found: dict[tuple[str, int], int] = {}
+    blend_found: dict[tuple[str, int], int] = {}
     predictions: dict[str, tuple[int, list[int]]] = {}
     for path in sorted((run_path / "features" / split).glob("part-*.parquet")):
         columns = ["request_id", "hit_log_id", "banner_id", "pre_rank", *feature_names]
@@ -250,6 +252,14 @@ def ranker_report(
                 pair = (request_id, value[2])
                 if pair in truth:
                     ranker_found[pair] = rank
+            blended = rank_linear_order(
+                values,
+                catboost_weight=float(cfg.submission.blend.catboost_weight),
+            )
+            for rank, value in enumerate(blended, start=1):
+                pair = (request_id, value[2])
+                if pair in truth:
+                    blend_found[pair] = rank
     prediction_rows = [
         {"HitLogID": hit_log_id, "BannerID": banner_ids}
         for _, (hit_log_id, banner_ids) in sorted(predictions.items())
@@ -269,6 +279,7 @@ def ranker_report(
         "metrics": {
             "rrf": recall_metrics(records_from_found(truth, rrf_found), cutoffs),
             "catboost": recall_metrics(records_from_found(truth, ranker_found), cutoffs),
+            "blend": recall_metrics(records_from_found(truth, blend_found), cutoffs),
         },
     }
     return report, prediction_table

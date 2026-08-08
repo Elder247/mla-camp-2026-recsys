@@ -90,3 +90,6 @@ submission:
   expected_requests: 10000
   allow_fewer_than_top_k: false
   ranking: catboost
+  blend:
+    method: rank_linear
+    catboost_weight: 1.0
