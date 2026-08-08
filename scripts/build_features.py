@@ -54,7 +54,10 @@ def _initialize_feature_worker(
         scope_manifest = json.loads(scope_path.read_text(encoding="utf-8"))
         validate_scope(str(cfg.runtime.scope), str(scope_manifest["scope"]))
         frozen_counter_cutoff = int(scope_manifest["frozen_cutoff_ts"])
-        counter_lookup = CounterLookup.from_parquet(counter_path)
+        counter_lookup = CounterLookup.from_parquet(
+            counter_path,
+            families=[str(value) for value in cfg.features.counter_families],
+        )
         counter_inputs = [fingerprint_file(counter_path), fingerprint_file(scope_path)]
     _FEATURE_STATE.clear()
     _FEATURE_STATE.update(

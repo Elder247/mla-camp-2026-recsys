@@ -50,3 +50,9 @@ def test_counter_feature_contract_has_configured_windows() -> None:
     )
     assert values["counter__banner__7d__present"] == 1.0
     assert values["counter__banner__all__sc_avg"] == 10.0
+
+
+def test_lookup_materializes_only_configured_families() -> None:
+    lookup = CounterLookup([event(100, 1, 10.0)], families=["query"])
+    assert lookup.stats("query", "q", row_timestamp=101, window_days=0).clicks == 1
+    assert lookup.stats("banner", "1", row_timestamp=101, window_days=0).clicks == 0

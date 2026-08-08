@@ -96,7 +96,9 @@ features:
   version: feature_v2_walk_forward_10m
   counter_version: click_events_asof_external_10m_v1
   counter_windows_days: [7, 28, 0]
-  counter_families: [banner, query, region, user]
+  # Existing honest FI puts query/region ahead of the remaining counters;
+  # restricting lookup construction to these families cuts peak memory/time.
+  counter_families: [query, region]
   enabled:
     - retrieval_provenance_v2
     - request_context_v2

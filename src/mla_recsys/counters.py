@@ -93,7 +93,13 @@ class CounterLookup:
     train and full_train events respectively.
     """
 
-    def __init__(self, events: Sequence[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        events: Iterable[dict[str, Any]],
+        *,
+        families: Sequence[str] | None = None,
+    ) -> None:
+        requested = set(families or ())
         grouped: dict[tuple[str, str], list[tuple[int, float]]] = defaultdict(list)
         for event in events:
             timestamp = int(event["show_time"])
@@ -117,7 +123,7 @@ class CounterLookup:
                 "user_group": f"{user}|{group}" if user and group else "",
             }
             for family, key in keys.items():
-                if key:
+                if key and (not requested or family in requested):
                     grouped[(family, key)].append((timestamp, cost))
 
         self.timestamps: dict[tuple[str, str], list[int]] = {}
@@ -131,8 +137,18 @@ class CounterLookup:
             self.prefix_cost[key] = prefix
 
     @classmethod
-    def from_parquet(cls, path: Path) -> "CounterLookup":
-        return cls(pq.read_table(path, schema=COUNTER_EVENT_SCHEMA).to_pylist())
+    def from_parquet(
+        cls,
+        path: Path,
+        *,
+        families: Sequence[str] | None = None,
+    ) -> "CounterLookup":
+        def rows() -> Iterable[dict[str, Any]]:
+            parquet = pq.ParquetFile(path)
+            for batch in parquet.iter_batches(batch_size=100_000):
+                yield from batch.to_pylist()
+
+        return cls(rows(), families=families)
 
     @staticmethod
     def entity_keys(request: dict[str, Any], candidate: dict[str, Any]) -> dict[str, str]:
