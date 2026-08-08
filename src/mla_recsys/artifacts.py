@@ -434,4 +434,9 @@ class RunStore:
     def finalize(self, status: str, **updates: Any) -> dict[str, Any]:
         if status not in {"completed", "failed"}:
             raise ValueError(status)
-        return self.update_result(status=status, finished_at=utc_now(), **updates)
+        value = self.read_result()
+        if status == "completed":
+            value.pop("error", None)
+        value.update(status=status, finished_at=utc_now(), **updates)
+        atomic_write_json(self.path / "result.json", value)
+        return value
