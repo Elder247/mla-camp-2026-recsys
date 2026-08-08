@@ -16,6 +16,9 @@ immutable train/val/test/index + frozen retrieval models
 Legacy TF-IDF and step3 Two-Tower are loaded through the current solution
 protocol. Their mathematics and artifacts remain frozen in Iteration 0. The
 new pipeline owns orchestration, caching, validation and reporting.
+Text normalization used by feature/counter infrastructure is a project-owned
+copy of the frozen `common.text` contract, so detached non-login runs do not
+depend on an ambient `PYTHONPATH`; `common/` itself remains unchanged.
 
 ## Configuration composition
 

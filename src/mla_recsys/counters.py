@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from common.text import normalize
+from .text import normalize
 
 
 WEEK_SECONDS = 7 * 24 * 60 * 60

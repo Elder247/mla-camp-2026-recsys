@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from common.text import normalize, tokenize
+from .text import normalize, tokenize
 
 
 BASE_FEATURES = [
