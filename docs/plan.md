@@ -15,7 +15,7 @@ This file tracks implementation status only; it does not redefine priorities.
 | Iteration 1.1 fast value | completed, rejected by honest gate | temporal completed in 40 minutes; RRF/CatBoost SC@50 `0.609868/0.594359` |
 | Iteration 1.2 fast quality | completed, not promoted | honest RRF/CatBoost SC@50 `0.613506/0.613103` |
 | TwoTower v2 full | completed | 21.8M pairs; probe SC@500 `0.707873`, SC@50 `0.518348` |
-| 10M weekly OOF cycle | running | 8 weeks/2.18M clicks; smoke → temporal → gated full detached chain armed |
+| 10M weekly OOF cycle | completed, rejected on private | temporal blend `0.617587`; private `0.5607`, below prior `0.5818` |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -206,6 +206,8 @@ TwoTower v2 implementation evidence:
   model plus optimizer checkpoints make it resume-safe by week;
 - 750 deterministic OOF request groups per week and a compact full click-event
   stream are produced in one pass;
+- weekly training completed all eight snapshots in 487 seconds; the artifact
+  contains 6,000 OOF requests and 2,180,453 strict-ASOF history events;
 - snapshot-aware batch inference, external strict-ASOF query/user/global
   history, OOF/validation disjointness and configured-family counters have unit
   coverage; the full project suite passes 64/64 before supervisors;
@@ -219,3 +221,35 @@ TwoTower v2 implementation evidence:
 - weekly preparation, model training, smoke, temporal promotion and full are
   detached sequential processes, so loss of the local internet connection does
   not stop them.
+
+10M weekly OOF temporal evidence (`20260808_1830_i2_wf10m_temporal`):
+
+- the natural candidate pool contains 500 rows per request with no positive
+  injection; train/holdout features contain `6,249,500/1,750,000` rows;
+- candidate SC Recall@500 is `0.694238`, above the configured `0.690669` gate;
+- one raw-SourceCost CatBoost fit stopped at iteration `178`; fit time was
+  `4m39s`, and native importance for all 139 features is persisted;
+- CatBoost alone reaches Recall/SC Recall@50 `0.501857/0.612802`;
+- a preconfigured scalar rank blend was tested without regenerating candidates
+  or refitting the model. Weight `0.75 CatBoost / 0.25 RRF` reaches
+  `0.510711/0.617587`, passing the `0.616045` ranker gate;
+- the blend probe takes 13 seconds and records wall time, peak RSS and the full
+  grid in `metrics/rank_blend_fine.json`; the supervisor selected 179 trees for
+  the single full-data CatBoost fit.
+
+10M weekly OOF full/private evidence (`20260808_2030_i2_wf10m_full`):
+
+- the complete full run took `33m13s`; TF-IDF remained the bottleneck at
+  `25m56s` for 15,999 full-train requests and `16m36s` for 10,000 test
+  requests, overlapped by the scheduler;
+- eight-worker merge took `30/18s` for `7,999,500/5,000,000` rows; feature
+  construction took `286/191s`; the single 179-tree CatBoost fit took `55s`;
+- strict validation passed 10,000 rows with exactly 50 indexed, unique banners
+  per row. The 2.76 MB file hash is
+  `aca536c7c3c6bf8d0431087ae5da54e279d2e52b64f6efd4aa6cbd094fd529b2`;
+- leaderboard submission at `2026-08-09 00:28 MSK` scored SC Recall@50
+  `0.5607`, Recall@50 `0.4306`, Recall@10 `0.2519`. It is below the previous
+  private best `0.5818` and is rejected despite passing temporal gates;
+- the private/temporal gap and lower 10M candidate ceiling show that the
+  history reduction is not quality-neutral. The next retrieval hypothesis must
+  retain chronological leakage safety while restoring the 100M history scope.

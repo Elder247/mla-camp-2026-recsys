@@ -172,9 +172,20 @@ nohup python scripts/continue_walk_forward_pipeline.py \
 ```
 
 It waits for weekly training, runs smoke, then fixed temporal validation,
-selects RRF or CatBoost by SC Recall@50, and launches full only when candidate
-SC@500 and ranker SC@50 exceed their configured gates. All pipeline runs log to
-UnderDeep `camp-2026/modern-plumber` and keep a local JSONL fallback.
+selects RRF, CatBoost or the configured scalar blend by SC Recall@50, and
+launches full only when candidate SC@500 and ranker SC@50 exceed their
+configured gates. All pipeline runs log to UnderDeep
+`camp-2026/modern-plumber` and keep a local JSONL fallback.
+
+The scalar blend probe reuses cached holdout features and the trained model; it
+does not generate candidates or fit CatBoost again:
+
+```bash
+python scripts/tune_rank_blend.py \
+  --run /home/astrofimuk/workspace/mla_two_stage/runs/<temporal-id> \
+  --alphas 0.55,0.6,0.65,0.7,0.75,0.8,0.85 \
+  --output /home/astrofimuk/workspace/mla_two_stage/runs/<temporal-id>/metrics/rank_blend.json
+```
 
 ## Leaderboard submission
 
