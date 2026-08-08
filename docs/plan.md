@@ -90,3 +90,10 @@ Iteration 1 CatBoost implementation evidence:
 - standard, permutation and top-20 SHAP reports are produced by the isolated
   train stage. Permutation uses complete request groups and direct
   SourceCost-capture@50, not AUC or train loss.
+
+Execution reliability follow-up:
+
+- Linux stage RSS now comes from per-process `/proc` sampling and records its
+  measurement method, rather than inheriting an earlier child maximum;
+- a disconnected SSH/stdout consumer no longer raises `BrokenPipeError` in the
+  orchestrator; stage output continues into the durable run log.

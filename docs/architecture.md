@@ -120,5 +120,8 @@ groups, and a top-20 mean-absolute-SHAP summary.
 
 `scripts/run_pipeline.py` is a standard-library orchestrator. It launches each
 configured stage as a subprocess, streams combined stdout/stderr into a stage
-log and records wall time/peak RSS. Candidate sources run sequentially by
-default (`max_parallel_cg: 1`); GPU sources must not overlap.
+log and records wall time/peak RSS. On Linux, RSS is sampled from the stage
+process itself instead of reusing the process-wide historical maximum. A
+dropped SSH/stdout stream disables echo but does not terminate the child or
+its durable log. Candidate sources run sequentially by default
+(`max_parallel_cg: 1`); GPU sources must not overlap.
