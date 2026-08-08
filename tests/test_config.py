@@ -165,6 +165,32 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(source.top_k, 1000)
         self.assertEqual(cfg.pipeline.max_wall_seconds, 3600)
 
+    def test_two_tower_v2_fast_quality_keeps_full_quality_budget(self) -> None:
+        cfg = compose_config("i2_two_tower_v2_fast_quality", mode="offline")
+        enabled = [
+            str(name)
+            for name, item in cfg.candidates.generators.items()
+            if bool(item.enabled)
+        ]
+        self.assertEqual(
+            enabled,
+            [
+                "tfidf_v1",
+                "two_tower_fps_v1",
+                "two_tower_v2",
+                "history_legacy_v1",
+                "history_query_click_v1",
+                "history_query_sc_v1",
+                "history_query_region_v1",
+            ],
+        )
+        self.assertEqual(cfg.candidates.generators.two_tower_v2.top_k, 1000)
+        self.assertEqual(cfg.candidates.generators.two_tower_v2.batch_size, 256)
+        self.assertEqual(cfg.candidates.ranker_pool, 500)
+        self.assertEqual(cfg.candidates.union_max_candidates, 2200)
+        self.assertEqual(cfg.ranker.iterations, 900)
+        self.assertEqual(cfg.pipeline.max_wall_seconds, 10800)
+
 
 if __name__ == "__main__":
     unittest.main()
