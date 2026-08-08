@@ -15,6 +15,10 @@ from mla_recsys.candidate_cache import enabled_sources, load_source  # noqa: E40
 from mla_recsys.command import load_stage_context  # noqa: E402
 from mla_recsys.data import read_request_parquet, request_example, stable_partition  # noqa: E402
 from mla_recsys.fusion import fuse_rankings  # noqa: E402
+from mla_recsys.temporal_candidates import (  # noqa: E402
+    is_temporal_source,
+    temporal_rankings,
+)
 
 
 def cached_top(
@@ -45,7 +49,11 @@ def main() -> int:
     requests_per_split = int(cfg.data.smoke_requests_per_split)
     top_k = int(cfg.evaluation.submission_top_k)
     sources = enabled_sources(cfg)
-    specs = {source: load_source(cfg, source) for source in sources}
+    specs = {
+        source: load_source(cfg, source)
+        for source in sources
+        if not is_temporal_source(cfg, source)
+    }
     weights = {source: float(cfg.candidates.generators[source].weight) for source in sources}
     quotas = {source: int(cfg.candidates.generators[source].quota) for source in sources}
     partitions = int(cfg.data.partition_count)
@@ -63,9 +71,24 @@ def main() -> int:
             context.store.path / "data" / f"{split}_requests.parquet"
         )[:requests_per_split]
         checked_by_split[split] = len(requests)
+        temporal_by_source = {
+            source: temporal_rankings(
+                cfg=cfg,
+                run_path=context.store.path,
+                split=split,
+                source=source,
+                requests=requests,
+            )
+            for source in sources
+            if is_temporal_source(cfg, source)
+        }
         for request in requests:
             rankings = {
-                source: specs[source].generator.rank(request_example(request))
+                source: (
+                    temporal_by_source[source].get(str(request["request_id"]), [])
+                    if source in temporal_by_source
+                    else specs[source].generator.rank(request_example(request))
+                )
                 for source in sources
             }
             direct = fuse_rankings(

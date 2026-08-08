@@ -9,7 +9,7 @@ This file tracks implementation status only; it does not redefine priorities.
 | Audit VM/git/data/artifacts/GPU/baseline | completed | clean `main`, H100 visible through torch, schemas and legacy metrics captured |
 | Docs/config/run contract | completed | commit `786f69e`; 10 pytest + 10 legacy unittest pass |
 | Iteration 0 baseline pipeline | completed | temporal/full runs, natural pool, cache parity, strict 10k submission |
-| Iteration 1 candidate generators | pending | complementarity and SC ceiling gates |
+| Iteration 1 candidate generators | in progress | implementation/smoke complete; full temporal complementarity and SC ceiling pending |
 | Iteration 1 feature v2 | pending | chunk parity, leakage-safe schema, memory/timing report |
 | Iteration 1 SC-aware CatBoost | pending | honest SC@50 win, importance, validated batch prediction |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
@@ -55,3 +55,16 @@ Iteration 0 full evidence (`20260808_0040_i0_full`):
   upper bound of 8.27 GiB;
 - the full run records its initial SHA plus append-only clean resume SHAs and
   finishes with `status=completed` and no stale error.
+
+Iteration 1 candidate smoke evidence (`20260808_0815_i1_cg_smoke`):
+
+- eight enabled sources materialize into 576 source/merged parquet partitions;
+- query-click, query-SC and exact query-region use frozen pre-validation history;
+  user/region/global use walk-forward train state and frozen holdout state;
+- direct and cached 8-source top-50 match on 40/40 requests with zero
+  mismatches; all enabled sources have provenance columns in the merged schema;
+- 28/28 post-smoke tests pass; 644 manifests have two candidate schemas and
+  one feature schema;
+- the 20-request sample is contract evidence only. User/region/global coverage
+  is zero on the first 20 fit requests and must be judged on the full temporal
+  holdout; no source is accepted from smoke metrics.

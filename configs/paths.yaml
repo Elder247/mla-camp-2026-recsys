@@ -16,5 +16,6 @@ paths:
   step3_code: ${paths.root}/code_maxim/step3_fps/inference.py
   step3_artifact: ${paths.immutable_artifacts}/step3_fps
   history_code: ${paths.root}/generators/history.py
+  history_variants_code: ${paths.root}/generators/history_variants.py
   history_artifact: ${paths.immutable_artifacts}/history
   legacy_catboost_prediction: ${paths.root}/run/predictions/catboost_test_top50.parquet

@@ -29,6 +29,14 @@ python scripts/evaluate_run.py experiment=i0_reproduce run_id=<id>
 python scripts/inspect_run.py runs/<id>
 ```
 
+Generate one Iteration 1 source without running the complete graph:
+
+```bash
+python scripts/generate_candidates.py \
+  experiment=i1_more_cg_features_sc run_id=<id> mode=offline scope=offline \
+  split=train cg=history_user_v1
+```
+
 ## Full refit and submission
 
 ```bash

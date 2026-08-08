@@ -20,6 +20,11 @@ from mla_recsys.candidate_cache import (  # noqa: E402
 from mla_recsys.command import load_stage_context, require_choice  # noqa: E402
 from mla_recsys.config import config_fingerprint  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
+from mla_recsys.temporal_candidates import (  # noqa: E402
+    generate_temporal_source_candidates,
+    is_temporal_source,
+    temporal_source_inputs,
+)
 
 
 def main() -> int:
@@ -33,8 +38,18 @@ def main() -> int:
     if not bool(cfg.candidates.generators[cg].get("enabled", False)):
         raise ValueError(f"Candidate generator is disabled: {cg}")
     request_path = context.store.path / "data" / f"{split}_requests.parquet"
-    spec = load_source(cfg, cg)
-    inputs = source_input_fingerprints(spec, request_path)
+    temporal = is_temporal_source(cfg, cg)
+    spec = None if temporal else load_source(cfg, cg)
+    inputs = (
+        temporal_source_inputs(
+            cfg=cfg,
+            run_path=context.store.path,
+            split=split,
+            source=cg,
+        )
+        if temporal
+        else source_input_fingerprints(spec, request_path)
+    )
     config_sha = config_fingerprint(cfg)
     artifact_version = f"{cg}_candidates_v1"
     cache_key = make_cache_key(
@@ -55,14 +70,26 @@ def main() -> int:
         print(json.dumps({"source": cg, "split": split, "status": "cache_hit"}))
         return 0
     requests = read_request_parquet(request_path)
-    report = generate_source_candidates(
-        spec=spec,
-        requests=requests,
-        run_path=context.store.path,
-        split=split,
-        partitions=partitions,
-        buffer_rows=int(cfg.data.candidate_buffer_rows),
-    )
+    if temporal:
+        report = generate_temporal_source_candidates(
+            cfg=cfg,
+            run_path=context.store.path,
+            split=split,
+            source=cg,
+            requests=requests,
+            partitions=partitions,
+            buffer_rows=int(cfg.data.candidate_buffer_rows),
+        )
+    else:
+        assert spec is not None
+        report = generate_source_candidates(
+            spec=spec,
+            requests=requests,
+            run_path=context.store.path,
+            split=split,
+            partitions=partitions,
+            buffer_rows=int(cfg.data.candidate_buffer_rows),
+        )
     finalize_source_manifests(
         run_path=context.store.path,
         split=split,
@@ -82,4 +109,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

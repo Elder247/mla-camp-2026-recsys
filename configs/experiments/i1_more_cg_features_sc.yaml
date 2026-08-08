@@ -6,14 +6,81 @@ candidates:
   union_max_candidates: 4000
   ranker_pool: 1000
   generators:
-    tfidf_v1: {enabled: true, code_path_key: tfidf_code, artifact_path_key: tfidf_artifact, quota: 1000, top_k: 1000, weight: 0.75}
-    two_tower_fps_v1: {enabled: true, code_path_key: step3_code, artifact_path_key: step3_artifact, quota: 1000, top_k: 1000, weight: 1.25}
-    history_query_click_v1: {enabled: true, quota: 250, top_k: 250, weight: 1.0}
-    history_query_sc_v1: {enabled: true, quota: 250, top_k: 250, weight: 1.0}
-    history_query_region_v1: {enabled: true, quota: 150, top_k: 150, weight: 1.0}
-    history_user_v1: {enabled: true, quota: 200, top_k: 200, weight: 1.0}
-    region_pop_sc_v1: {enabled: true, quota: 150, top_k: 150, weight: 1.0, min_clicks: 2, bayes_prior: 20.0}
-    global_pop_sc_v1: {enabled: true, quota: 75, top_k: 75, weight: 1.0, min_clicks: 2, bayes_prior: 20.0}
+    tfidf_v1:
+      enabled: true
+      feature_name: tfidf
+      code_path_key: tfidf_code
+      artifact_path_key: tfidf_artifact
+      python_path_keys: [tfidf_root]
+      quota: 1000
+      top_k: 1000
+      weight: 0.75
+    two_tower_fps_v1:
+      enabled: true
+      feature_name: two_tower_fps
+      code_path_key: step3_code
+      artifact_path_key: step3_artifact
+      python_path_keys: [root, step2_root]
+      quota: 1000
+      top_k: 1000
+      weight: 1.25
+    history_query_click_v1:
+      enabled: true
+      feature_name: history_query_click
+      code_path_key: history_variants_code
+      artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
+      features: {variant: query_click}
+      quota: 200
+      top_k: 200
+      weight: 1.0
+    history_query_sc_v1:
+      enabled: true
+      feature_name: history_query_sc
+      code_path_key: history_variants_code
+      artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
+      features: {variant: query_sc}
+      quota: 200
+      top_k: 200
+      weight: 1.0
+    history_query_region_v1:
+      enabled: true
+      feature_name: history_query_region
+      code_path_key: history_variants_code
+      artifact_path_key: history_artifact
+      python_path_keys: [root, step2_root]
+      features: {variant: query_region_sc}
+      quota: 150
+      top_k: 150
+      weight: 1.0
+    history_user_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: history_user
+      quota: 200
+      top_k: 200
+      weight: 1.0
+      min_clicks: 1
+      bayes_prior: 0.0
+    region_pop_sc_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: region_pop_sc
+      quota: 150
+      top_k: 150
+      weight: 1.0
+      min_clicks: 2
+      bayes_prior: 20.0
+    global_pop_sc_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: global_pop_sc
+      quota: 75
+      top_k: 75
+      weight: 1.0
+      min_clicks: 2
+      bayes_prior: 20.0
 
 features:
   version: feature_v2
@@ -32,4 +99,3 @@ ranker:
   depth: 8
   learning_rate: 0.04
   l2_leaf_reg: 7.0
-

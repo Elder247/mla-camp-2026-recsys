@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from mla_recsys.config import compose_config, config_fingerprint, parse_cli_dotlist  # noqa: E402
+from mla_recsys.candidate_cache import feature_name  # noqa: E402
+from mla_recsys.merge import merged_schema  # noqa: E402
 
 
 class ConfigTest(unittest.TestCase):
@@ -67,6 +69,32 @@ class ConfigTest(unittest.TestCase):
             stage for stage in cfg.pipeline.stages if stage.name == "validate_cache_parity"
         )
         self.assertEqual(list(parity.modes), ["smoke", "offline", "full"])
+
+    def test_every_i1_generator_has_an_implementation(self) -> None:
+        cfg = compose_config("i1_more_cg_features_sc", mode="offline")
+        for name, item in cfg.candidates.generators.items():
+            if not bool(item.get("enabled", False)):
+                continue
+            if str(item.get("kind") or "") == "temporal_history":
+                self.assertIn(
+                    name,
+                    {"history_user_v1", "region_pop_sc_v1", "global_pop_sc_v1"},
+                )
+            else:
+                self.assertTrue(item.get("code_path_key"), name)
+                self.assertTrue(item.get("artifact_path_key"), name)
+
+    def test_every_i1_generator_is_present_in_merged_schema(self) -> None:
+        cfg = compose_config("i1_more_cg_features_sc", mode="offline")
+        names = set(merged_schema(cfg).names)
+        for source, item in cfg.candidates.generators.items():
+            if not bool(item.get("enabled", False)):
+                continue
+            alias = feature_name(cfg, str(source))
+            self.assertTrue(
+                {f"{alias}__present", f"{alias}__rank", f"{alias}__score"} <= names,
+                source,
+            )
 
 
 if __name__ == "__main__":

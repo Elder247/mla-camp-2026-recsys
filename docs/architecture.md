@@ -73,10 +73,24 @@ counters/history are derived from train sources with cutoffs before validation.
 the experiment and may use train plus all available validation data for hidden
 test inference. Metrics from the two scopes are never merged.
 
+## Iteration 1 candidate histories
+
+The frozen pre-validation `train_100m` history artifact is exposed as three
+independent sources: query ordered by clicks, query ordered by direct
+SourceCost, and exact query-region ordered by direct SourceCost. Query-region
+has no implicit query-only fallback, so its complementarity is measurable.
+
+User, region and global sources are native run-scoped generators. For `train`
+and `full_train`, they rank from state observed at strictly earlier timestamps;
+all requests sharing a timestamp are ranked before that timestamp is observed.
+For `holdout`, state is frozen after `train`; for `test`, it is frozen after
+`full_train`. Targets from the evaluated split are therefore never used to
+construct its candidate membership. Region/global value scores use configured
+minimum support and Bayesian shrinkage; user history uses exact prior clicks.
+
 ## Memory and execution
 
 `scripts/run_pipeline.py` is a standard-library orchestrator. It launches each
 configured stage as a subprocess, streams combined stdout/stderr into a stage
 log and records wall time/peak RSS. Candidate sources run sequentially by
 default (`max_parallel_cg: 1`); GPU sources must not overlap.
-
