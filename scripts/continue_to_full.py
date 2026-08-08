@@ -28,6 +28,25 @@ def select_ranking(metrics: dict, candidates: list[str]) -> tuple[str, float]:
     return max(values, key=lambda item: (item[1], item[0] == "rrf"))
 
 
+def load_blend_probe(temporal_path: Path, cfg: object) -> tuple[dict, str] | None:
+    """Load the exact configured scalar blend from a cheap temporal probe."""
+
+    method = str(cfg.submission.blend.method)
+    weight = float(cfg.submission.blend.catboost_weight)
+    for name in ("rank_blend_fine.json", "rank_blend.json"):
+        path = temporal_path / "metrics" / name
+        if not path.is_file():
+            continue
+        report = read_json(path)
+        for result in report.get("results", []):
+            if (
+                str(result.get("method")) == method
+                and abs(float(result.get("alpha")) - weight) < 1e-12
+            ):
+                return result["metrics"], str(path)
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Wait for an honest temporal gate and launch detached-safe full refit"
@@ -86,8 +105,19 @@ def main() -> int:
         str(value)
         for value in cfg.promotion_gate.get("ranking_candidates", ["catboost"])
     ]
+    ranking_metrics = dict(ranker["metrics"])
+    blend_probe_path = None
+    if "blend" in ranking_candidates and "blend" not in ranking_metrics:
+        blend_probe = load_blend_probe(temporal_path, cfg)
+        if blend_probe is not None:
+            ranking_metrics["blend"], blend_probe_path = blend_probe
+    available_rankings = [
+        name for name in ranking_candidates if name in ranking_metrics
+    ]
+    if not available_rankings:
+        raise RuntimeError("No configured temporal ranking metrics are available")
     selected_ranking, ranker_value = select_ranking(
-        ranker["metrics"], ranking_candidates
+        ranking_metrics, available_rankings
     )
     candidate_threshold = float(
         cfg.promotion_gate.candidate_sourcecost_recall_at_500
@@ -106,6 +136,8 @@ def main() -> int:
         ranker_threshold=ranker_threshold,
         selected_ranking=selected_ranking,
         ranking_candidates=ranking_candidates,
+        available_rankings=available_rankings,
+        blend_probe_path=blend_probe_path,
         temporal_best_iteration=best_iteration,
         full_iterations=full_iterations,
     )
