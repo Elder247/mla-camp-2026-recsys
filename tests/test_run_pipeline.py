@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import threading
 import time
+
+from omegaconf import OmegaConf
 
 import pytest
 
@@ -9,6 +12,7 @@ from scripts.run_pipeline import (
     _candidate_source,
     enforce_run_budget,
     execution_groups,
+    run_resource_aware_candidates,
     stage_tracking_metrics,
     stage_commands,
 )
@@ -104,3 +108,54 @@ def test_stage_tracking_metrics_have_stable_names_and_megabytes() -> None:
         "stage/train_ranker/peak_rss_mb": 2.0,
         "stage/train_ranker/peak_gpu_memory_mb": 3.0,
     }
+
+
+def test_candidate_scheduler_is_work_conserving_with_single_gpu() -> None:
+    cfg = OmegaConf.create(
+        {
+            "pipeline": {"max_parallel_cg": 3},
+            "candidates": {
+                "generators": {
+                    "gpu_a": {"resource": "gpu"},
+                    "gpu_b": {"resource": "gpu"},
+                    "cpu_slow": {"resource": "cpu"},
+                    "cpu_fast": {"resource": "cpu"},
+                    "cpu_next": {"resource": "cpu"},
+                }
+            },
+        }
+    )
+    commands = [
+        (f"generate_train_{source}", [f"cg={source}"])
+        for source in ["gpu_a", "cpu_slow", "cpu_fast", "gpu_b", "cpu_next"]
+    ]
+    lock = threading.Lock()
+    active = 0
+    active_gpu = 0
+    max_active = 0
+    max_active_gpu = 0
+    starts: dict[str, float] = {}
+    finishes: dict[str, float] = {}
+
+    def run_one(stage: str, command: list[str]) -> dict[str, object]:
+        nonlocal active, active_gpu, max_active, max_active_gpu
+        source = command[0].split("=", 1)[1]
+        is_gpu = source.startswith("gpu_")
+        with lock:
+            starts[source] = time.monotonic()
+            active += 1
+            active_gpu += int(is_gpu)
+            max_active = max(max_active, active)
+            max_active_gpu = max(max_active_gpu, active_gpu)
+        time.sleep(0.08 if source == "cpu_slow" else 0.01)
+        with lock:
+            finishes[source] = time.monotonic()
+            active -= 1
+            active_gpu -= int(is_gpu)
+        return {"stage": stage, "status": "completed"}
+
+    values = run_resource_aware_candidates(cfg, commands, run_one)
+    assert len(values) == len(commands)
+    assert max_active == 3
+    assert max_active_gpu == 1
+    assert starts["cpu_next"] < finishes["cpu_slow"]

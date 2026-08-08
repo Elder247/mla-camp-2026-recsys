@@ -8,7 +8,9 @@ import json
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -152,6 +154,53 @@ def pending_commands(
     return pending
 
 
+def run_resource_aware_candidates(
+    cfg: object,
+    commands: list[tuple[str, list[str]]],
+    run_one: Callable[[str, list[str]], dict[str, object]],
+) -> list[dict[str, object]]:
+    """Keep candidate slots busy while allowing at most one GPU generator."""
+
+    workers = max(1, int(cfg.pipeline.max_parallel_cg))
+    gpu = deque()
+    cpu = deque()
+    for command in commands:
+        source = _candidate_source(command[1])
+        resource = str(cfg.candidates.generators[source].get("resource", "cpu"))
+        (gpu if resource == "gpu" else cpu).append(command)
+
+    completed: list[dict[str, object]] = []
+    active: dict[concurrent.futures.Future, str] = {}
+    gpu_active = False
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        while gpu or cpu or active:
+            while len(active) < workers:
+                selected = None
+                resource = "cpu"
+                if gpu and not gpu_active:
+                    selected = gpu.popleft()
+                    resource = "gpu"
+                elif cpu:
+                    selected = cpu.popleft()
+                if selected is None:
+                    break
+                future = executor.submit(run_one, selected[0], selected[1])
+                active[future] = resource
+                gpu_active = gpu_active or resource == "gpu"
+            if not active:
+                continue
+            done, _ = concurrent.futures.wait(
+                active,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for future in done:
+                resource = active.pop(future)
+                if resource == "gpu":
+                    gpu_active = False
+                completed.append(future.result())
+    return completed
+
+
 def enforce_run_budget(*, started: float, max_wall_seconds: int) -> None:
     if max_wall_seconds <= 0:
         return
@@ -262,11 +311,45 @@ def main() -> int:
     tracking_step = 0
     max_wall_seconds = int(cfg.pipeline.get("max_wall_seconds", 0))
     try:
-        for group in execution_groups(cfg, commands):
+        groups = execution_groups(cfg, commands)
+        group_index = 0
+        while group_index < len(groups):
+            group = groups[group_index]
             enforce_run_budget(
                 started=started,
                 max_wall_seconds=max_wall_seconds,
             )
+            if (
+                int(cfg.pipeline.max_parallel_cg) > 1
+                and group
+                and group[0][0].startswith("generate_")
+            ):
+                candidate_block = []
+                while (
+                    group_index < len(groups)
+                    and groups[group_index]
+                    and groups[group_index][0][0].startswith("generate_")
+                ):
+                    candidate_block.extend(groups[group_index])
+                    group_index += 1
+                pending = pending_commands(
+                    store,
+                    candidate_block,
+                    resume=bool(cfg.runtime.resume),
+                )
+                values = run_resource_aware_candidates(
+                    cfg,
+                    pending,
+                    lambda stage, command: StageRunner(store).run(
+                        stage,
+                        command,
+                        cwd=ROOT,
+                    ),
+                )
+                for value in values:
+                    tracking_step += 1
+                    tracker.log(tracking_step, stage_tracking_metrics(value))
+                continue
             pending = pending_commands(
                 store, group, resume=bool(cfg.runtime.resume)
             )
@@ -292,6 +375,7 @@ def main() -> int:
                         value = future.result()
                         tracking_step += 1
                         tracker.log(tracking_step, stage_tracking_metrics(value))
+            group_index += 1
     except (OSError, subprocess.CalledProcessError, TimeoutError) as error:
         store.finalize("failed", error=type(error).__name__)
         tracker.log_summary(final_tracking_metrics(store, cfg))
