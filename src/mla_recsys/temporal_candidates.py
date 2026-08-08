@@ -34,13 +34,21 @@ class BannerStats:
 
 
 class TemporalHistoryState:
-    def __init__(self, source: str, *, min_clicks: int, bayes_prior: float) -> None:
+    def __init__(
+        self,
+        source: str,
+        *,
+        min_clicks: int,
+        bayes_prior: float,
+        valid_banner_ids: set[int] | None = None,
+    ) -> None:
         if source not in TEMPORAL_SOURCES:
             raise ValueError(f"Unsupported temporal candidate source: {source}")
         self.source = source
         self.family = TEMPORAL_SOURCES[source]
         self.min_clicks = int(min_clicks)
         self.bayes_prior = float(bayes_prior)
+        self.valid_banner_ids = valid_banner_ids
         self.stats: dict[str, dict[int, BannerStats]] = defaultdict(dict)
 
     def _key(self, request: dict[str, Any]) -> str | None:
@@ -72,7 +80,13 @@ class TemporalHistoryState:
                 request.get("clicked_source_costs") or (),
             )
         for banner_id, source_cost in values:
-            item = by_banner.setdefault(int(banner_id), BannerStats())
+            normalized_banner_id = int(banner_id)
+            if (
+                self.valid_banner_ids is not None
+                and normalized_banner_id not in self.valid_banner_ids
+            ):
+                continue
+            item = by_banner.setdefault(normalized_banner_id, BannerStats())
             item.clicks += 1
             item.source_cost_sum += float(source_cost or 0.0)
             item.last_show_time = max(item.last_show_time, show_time)
@@ -127,6 +141,9 @@ def temporal_source_inputs(
     external = _external_events_path(cfg, source)
     if external is not None:
         inputs.append(fingerprint_file(external))
+    banner_index = _banner_index_path(cfg)
+    if banner_index is not None:
+        inputs.append(fingerprint_file(banner_index))
     inputs.append(fingerprint_file(Path(__file__)))
     return inputs
 
@@ -134,11 +151,29 @@ def temporal_source_inputs(
 def _new_state(cfg: DictConfig, source: str) -> TemporalHistoryState:
     item = cfg.candidates.generators[source]
     default_min_clicks = 1 if TEMPORAL_SOURCES[source] == "user" else 2
+    banner_index = _banner_index_path(cfg)
+    valid_banner_ids = None
+    if banner_index is not None:
+        table = pq.read_table(banner_index, columns=["BannerID"])
+        valid_banner_ids = {
+            int(banner_id)
+            for banner_id in table.column("BannerID").to_pylist()
+            if banner_id is not None
+        }
     return TemporalHistoryState(
         source,
         min_clicks=int(item.get("min_clicks", default_min_clicks)),
         bayes_prior=float(item.get("bayes_prior", 0.0)),
+        valid_banner_ids=valid_banner_ids,
     )
+
+
+def _banner_index_path(cfg: DictConfig) -> Path | None:
+    if not bool(cfg.candidates.get("temporal_restrict_to_banner_index", True)):
+        return None
+    paths = cfg.get("paths")
+    value = paths.get("banner_index") if paths is not None else None
+    return Path(str(value)) if value else None
 
 
 def _warm_state(
@@ -282,4 +317,5 @@ def generate_temporal_source_candidates(
             if reference_split(split)
             else "strictly_prior_timestamp_batches"
         ),
+        "index_membership_filter": bool(_banner_index_path(cfg)),
     }

@@ -43,6 +43,9 @@ data:
   request_schema_version: requests_v1
 
 candidates:
+  # Historical events may contain banners outside the frozen 1M corpus.
+  # Keep train, validation and submission in exactly the same item universe.
+  temporal_restrict_to_banner_index: true
   reuse_run: null
   rrf_constant: 60.0
   union_max_candidates: 2200

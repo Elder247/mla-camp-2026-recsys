@@ -8,7 +8,7 @@ import pyarrow.parquet as pq
 
 from mla_recsys.counters import COUNTER_EVENT_SCHEMA, stable_text_key
 from mla_recsys.data import write_request_parquet
-from mla_recsys.temporal_candidates import temporal_rankings
+from mla_recsys.temporal_candidates import TemporalHistoryState, temporal_rankings
 
 
 def cfg():
@@ -123,3 +123,34 @@ def test_external_history_is_strictly_prior_for_oof_rows(tmp_path: Path) -> None
     )
     assert result["oof:1"] == []
     assert [row["banner_id"] for row in result["oof:2"]] == [10]
+
+
+def test_history_state_rejects_banners_outside_frozen_index() -> None:
+    state = TemporalHistoryState(
+        "global_pop_sc_v1",
+        min_clicks=1,
+        bayes_prior=0.0,
+        valid_banner_ids={10},
+    )
+    state.observe(request("1", 100, 10))
+    state.observe(request("2", 101, 20))
+    ranked = state.rank(request("3", 102, 30), top_k=10)
+    assert [row["banner_id"] for row in ranked] == [10]
+
+
+def test_temporal_rankings_use_configured_frozen_index(tmp_path: Path) -> None:
+    banner_index = tmp_path / "banner_index.parquet"
+    pq.write_table(pa.table({"BannerID": pa.array([10], type=pa.int64())}), banner_index)
+    config = cfg()
+    config.paths = {"banner_index": str(banner_index)}
+    rows = [request("1", 100, 10), request("2", 101, 20), request("3", 102, 30)]
+    result = temporal_rankings(
+        cfg=config,
+        run_path=tmp_path,
+        split="train",
+        source="history_user_v1",
+        requests=rows,
+    )
+    assert result["1"] == []
+    assert [row["banner_id"] for row in result["2"]] == [10]
+    assert [row["banner_id"] for row in result["3"]] == [10]

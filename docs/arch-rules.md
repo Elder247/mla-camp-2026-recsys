@@ -35,3 +35,6 @@ These invariants are review blockers.
     a final model trained through all weeks is valid only for later val/test.
 14. UnderDeep is observability, not a dependency. Every event is first written
     to a masked local backup; missing tokens/client/network must not fail a run.
+15. The frozen banner index defines the item universe. Every generator filters
+    historical observations to that index before ranking, so offline and full
+    scopes cannot emit an item that submission cannot resolve.
