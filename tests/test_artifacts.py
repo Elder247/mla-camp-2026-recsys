@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -85,7 +86,30 @@ class ArtifactTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 RunStore.initialize(changed, repo_root=ROOT)
 
+    def test_resume_records_changed_git_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cfg = compose_config(
+                "i0_reproduce",
+                run_id="20260807_2201_resume",
+                mode="smoke",
+                overrides=[
+                    f"paths.root={root}",
+                    f"paths.runs={root / 'runs'}",
+                    f"paths.cache={root / 'cache'}",
+                    f"paths.python={sys.executable}",
+                ],
+            )
+            store = RunStore.initialize(cfg, repo_root=ROOT)
+            manifest_path = store.path / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["git"] = {"sha": "stale", "branch": "main", "dirty": False}
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            RunStore.initialize(cfg, repo_root=ROOT)
+            resumed = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(resumed["resume_events"]), 1)
+            self.assertNotEqual(resumed["resume_events"][0]["git"]["sha"], "stale")
+
 
 if __name__ == "__main__":
     unittest.main()
-

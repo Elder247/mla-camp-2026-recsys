@@ -198,6 +198,29 @@ def collect_environment(repo_root: Path, python_executable: Path) -> dict[str, A
     }
 
 
+def current_git_state(repo_root: Path) -> dict[str, Any]:
+    dirty = _git(repo_root, "status", "--porcelain")
+    return {
+        "sha": _git(repo_root, "rev-parse", "HEAD"),
+        "branch": _git(repo_root, "branch", "--show-current"),
+        "dirty": bool(dirty) if dirty is not None else None,
+    }
+
+
+def record_resume_git_state(manifest_path: Path, repo_root: Path) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    current = current_git_state(repo_root)
+    events = list(manifest.get("resume_events") or [])
+    previous = events[-1]["git"] if events else manifest.get("git")
+    if current == previous:
+        return
+    event = {"resumed_at": utc_now(), "git": current}
+    events.append(event)
+    manifest["resume_events"] = events
+    manifest["last_resume"] = event
+    atomic_write_json(manifest_path, manifest)
+
+
 def output_manifest_path(output: Path) -> Path:
     return output.with_name(output.name + MANIFEST_SUFFIX)
 
@@ -317,6 +340,7 @@ class RunStore:
                     f"Run config fingerprint mismatch for {store.run_id}: "
                     f"{previous.get('config_sha256')} != {store.config_sha256}"
                 )
+            record_resume_git_state(manifest_path, repo_root)
             return store
 
         for relative in (
