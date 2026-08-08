@@ -11,7 +11,52 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mla_recsys.artifacts import atomic_write_json, utc_now  # noqa: E402
+from mla_recsys.artifacts import (  # noqa: E402
+    atomic_write_json,
+    fingerprint_file,
+    utc_now,
+)
+
+
+def promote_final_artifact(artifact_dir: Path, final_artifact: Path) -> dict:
+    manifest_path = artifact_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("status") != "completed":
+        raise RuntimeError("Cannot promote final artifact before weekly completion")
+    required = [
+        final_artifact / name
+        for name in (
+            "model.pt",
+            "candidate_embeddings.npy",
+            "candidate_metadata.parquet",
+            "manifest.json",
+        )
+    ]
+    missing = [str(path) for path in required if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"Final override is incomplete: {missing}")
+    previous = str(manifest.get("final_artifact") or "")
+    manifest.update(
+        original_walk_forward_final_artifact=previous,
+        final_artifact=str(final_artifact),
+        final_artifact_source="configured_full_quality_override",
+        final_lifecycle={
+            "predict_state": "configured_full_quality_override",
+            "trained_on": "full_prevalidation_raw_train",
+            "target_week_seen": False,
+            "purpose": "validation_and_test",
+        },
+        final_artifact_inputs=[fingerprint_file(path) for path in required],
+    )
+    atomic_write_json(manifest_path, manifest)
+    metrics_path = artifact_dir / "metrics.json"
+    if metrics_path.is_file():
+        atomic_write_json(metrics_path, manifest)
+    return {
+        "previous": previous,
+        "selected": str(final_artifact),
+        "inputs": manifest["final_artifact_inputs"],
+    }
 
 
 def pipeline_command(
@@ -59,6 +104,8 @@ def main() -> int:
     parser.add_argument("--runs", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--immutable-artifacts", type=Path, required=True)
+    parser.add_argument("--walk-forward-artifact", type=Path)
+    parser.add_argument("--final-artifact-override", type=Path)
     parser.add_argument("--poll-seconds", type=int, default=20)
     parser.add_argument("--max-wait-seconds", type=int, default=7200)
     args = parser.parse_args()
@@ -95,6 +142,17 @@ def main() -> int:
             atomic_write_json(decision_path, decision)
             return 3
         time.sleep(max(1, args.poll_seconds))
+
+    if bool(args.walk_forward_artifact) != bool(args.final_artifact_override):
+        parser.error(
+            "--walk-forward-artifact and --final-artifact-override must be used together"
+        )
+    if args.walk_forward_artifact and args.final_artifact_override:
+        final_promotion = promote_final_artifact(
+            args.walk_forward_artifact, args.final_artifact_override
+        )
+        decision["final_artifact_promotion"] = final_promotion
+        atomic_write_json(decision_path, decision)
 
     phases = [
         (args.smoke_run, "smoke", "offline"),
