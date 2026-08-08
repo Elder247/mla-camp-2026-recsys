@@ -1,6 +1,5 @@
 USE kolmogorov;
 
-PRAGMA yt.Pool = "ads-research";
 PRAGMA yt.UseNativeYtTypes;
 
 $input = "__INPUT_TABLE__";
