@@ -34,8 +34,10 @@ walk_forward_ranker:
 candidates:
   reuse_run: null
   rrf_constant: 40.0
-  union_max_candidates: 500
-  ranker_pool: 500
+  # The previous 500-row fusion pool had a lower ceiling than TwoTower alone.
+  # 750 keeps additional complementary history candidates at modest cost.
+  union_max_candidates: 750
+  ranker_pool: 750
   generators:
     tfidf_v1:
       enabled: true
@@ -83,6 +85,16 @@ candidates:
       weight: 0.5
       min_clicks: 1
       bayes_prior: 0.0
+      external_events_path_key: two_tower_v2_walk_forward_history_events
+    global_pop_sc_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: global_pop_sc
+      quota: 75
+      top_k: 75
+      weight: 0.75
+      min_clicks: 2
+      bayes_prior: 20.0
       external_events_path_key: two_tower_v2_walk_forward_history_events
 
 features:

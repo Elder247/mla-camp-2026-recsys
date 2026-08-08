@@ -238,10 +238,11 @@ class ConfigTest(unittest.TestCase):
                 "two_tower_v2_walk_forward",
                 "history_query_sc_oof_v1",
                 "history_query_region_oof_v1",
+                "global_pop_sc_v1",
             ],
         )
-        self.assertEqual(cfg.candidates.ranker_pool, 500)
-        self.assertEqual(cfg.candidates.union_max_candidates, 500)
+        self.assertEqual(cfg.candidates.ranker_pool, 750)
+        self.assertEqual(cfg.candidates.union_max_candidates, 750)
         self.assertGreater(
             cfg.promotion_gate.candidate_sourcecost_recall_at_500,
             0.7048,

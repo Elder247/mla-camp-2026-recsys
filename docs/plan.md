@@ -271,8 +271,13 @@ Current fast 100M walk-forward decision:
 - only TwoTower gradient updates are deterministically sampled at request level
   (`10%`, capped at 400k examples per week). Multi-click targets stay together,
   and the sample spans the complete week instead of taking its first rows;
-- user/global history generators remain disabled: prior honest complementarity
-  was zero/negligible. Query and query-region history are retained;
+- user history remains disabled because its honest holdout recall was
+  negligible. Query, query-region and the cheap global-SC provenance are
+  retained; global finds few but disproportionately high-SourceCost clicks;
+- the natural ranker pool is 750 rather than 500: in the 10M run the 500-row
+  fused pool had SC ceiling `0.694238`, below TwoTower alone at 500
+  (`0.701323`). The extra 250 rows affect only the short merge/feature/ranker
+  stages, not TF-IDF or TwoTower inference;
 - CatBoost is still fitted once per temporal/full scope on the same natural
   candidate pool. A cheap cached CatBoost/RRF alpha probe is now run
   automatically before promotion;
