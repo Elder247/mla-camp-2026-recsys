@@ -1,0 +1,25 @@
+USE kolmogorov;
+
+PRAGMA yt.Pool = "ads-research";
+PRAGMA yt.UseNativeYtTypes;
+
+$input = "//home/bm/users/argus/mla/data/train_100m";
+$week_start = ($ts) -> {
+    RETURN (($ts - 345600ul) / 604800ul) * 604800ul + 345600ul;
+};
+
+$dated = (
+    SELECT
+        $week_start(ShowTime) AS week_start,
+        CAST(COALESCE(IsClick, 0) AS Uint64) AS is_click
+    FROM $input
+    WHERE ShowTime IS NOT NULL
+);
+
+SELECT
+    week_start AS week_start,
+    COUNT(*) AS impressions,
+    SUM(is_click) AS clicks
+FROM $dated
+GROUP BY week_start
+ORDER BY week_start;

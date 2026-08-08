@@ -1,0 +1,62 @@
+USE kolmogorov;
+
+PRAGMA yt.Pool = "ads-research";
+PRAGMA yt.TemporaryCompressionCodec = "zstd_3";
+PRAGMA yt.PublishedCompressionCodec = "zstd_3";
+PRAGMA yt.UseNativeYtTypes;
+
+$input = "__INPUT_TABLE__";
+$output = "__OUTPUT_TABLE__";
+
+$find_tokens = Re2::FindAndConsume(@@([0-9a-zа-яё]+)@@);
+$normalize = ($text) -> {
+    RETURN Unicode::ReplaceAll(
+        Unicode::ToLower(
+            Unicode::NormalizeNFKC(CAST(COALESCE($text, "") AS Utf8))
+        ),
+        "ё"u,
+        "е"u
+    );
+};
+$tokens = ($text, $limit) -> {
+    RETURN ListTake($find_tokens(CAST($normalize($text) AS String)), $limit);
+};
+$bucket = ($feature) -> {
+    $digest = Digest::Md5Raw($feature);
+    RETURN CAST(ByteAt($digest, 0) AS Uint32)
+        + 256u * CAST(ByteAt($digest, 1) AS Uint32);
+};
+$hash_tokens = ($items) -> {
+    RETURN ListMap($items, ($item) -> { RETURN $bucket($item); });
+};
+$week_start = ($ts) -> {
+    RETURN (($ts - 345600ul) / 604800ul) * 604800ul + 345600ul;
+};
+
+INSERT INTO $output WITH TRUNCATE
+SELECT
+    $week_start(ShowTime) AS week_start,
+    CAST(ShowTime AS Uint64) AS show_time,
+    UniqID AS uniq_id,
+    $normalize(SearchQuery) AS query,
+    RegionID AS region_id,
+    CryptaIDv2 AS crypta_id_v2,
+    DetailedDeviceType AS device,
+    Age AS age,
+    Gender AS gender,
+    CAST(BannerID AS Uint64) AS banner_id,
+    CAST(COALESCE(SourceCost, 0.0) AS Double) AS source_cost,
+    $hash_tokens($tokens(SearchQuery, 32)) AS query_word_ids,
+    AsList($bucket(CAST(COALESCE(RegionID, 0) AS String))) AS region_ids,
+    AsList($bucket(CAST(BannerID AS String))) AS banner_id_ids,
+    AsList($bucket(CAST(COALESCE(GroupExportID, 0) AS String))) AS ad_group_id_ids,
+    $hash_tokens($tokens(BannerTitle, 32)) AS title_word_ids,
+    $hash_tokens($tokens(BannerText, 64)) AS text_word_ids
+FROM $input
+WHERE
+    ShowTime IS NOT NULL
+    AND COALESCE(IsClick, 0) > 0
+    AND BannerID IS NOT NULL
+    AND SearchQuery IS NOT NULL
+    AND SearchQuery != ""
+ORDER BY week_start, show_time;
