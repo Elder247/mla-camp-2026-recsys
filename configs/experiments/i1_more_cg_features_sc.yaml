@@ -2,6 +2,10 @@ experiment:
   name: i1_more_cg_features_sc
   description: Independent history/popularity CGs, feature v2 and SC-aware CatBoost
 
+promotion_gate:
+  candidate_sourcecost_recall_at_500: 0.7048745994
+  ranker_sourcecost_recall_at_50: 0.6223875615
+
 pipeline:
   max_parallel_cg: 3
 
