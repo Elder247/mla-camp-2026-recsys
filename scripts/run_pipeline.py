@@ -15,7 +15,9 @@ from mla_recsys.config import compose_config, parse_cli_dotlist  # noqa: E402
 from mla_recsys.stage_runner import StageRunner  # noqa: E402
 
 
-def stage_commands(cfg: object) -> list[tuple[str, list[str]]]:
+def stage_commands(
+    cfg: object, child_overrides: list[str] | None = None
+) -> list[tuple[str, list[str]]]:
     commands = []
     for stage in cfg.pipeline.stages:
         if str(cfg.runtime.mode) not in [str(value) for value in stage.modes]:
@@ -28,6 +30,7 @@ def stage_commands(cfg: object) -> list[tuple[str, list[str]]]:
             f"run_id={cfg.runtime.run_id}",
             f"mode={cfg.runtime.mode}",
             f"scope={cfg.runtime.scope}",
+            *(child_overrides or []),
         ]
         name = str(stage.name)
         if name == "generate_candidates":
@@ -74,7 +77,7 @@ def main() -> int:
         scope=scope,
         overrides=overrides,
     )
-    commands = stage_commands(cfg)
+    commands = stage_commands(cfg, overrides)
     if args.dry_run:
         print(json.dumps({"run_id": cfg.runtime.run_id, "commands": commands}, indent=2))
         return 0
