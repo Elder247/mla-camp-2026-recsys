@@ -139,14 +139,17 @@ def main() -> int:
         "label_scale": label_scale,
     }
     atomic_write_json(model_dir / "catboost.json", metadata)
+    importance_type = str(
+        cfg.ranker.importance.get("type", "PredictionValuesChange")
+    )
     importance = model.get_feature_importance(
-        type=str(cfg.ranker.importance.type),
+        type=importance_type,
         prettified=True,
     )
     importance_path = context.store.path / "reports" / "feature_importance.csv"
     importance.to_csv(importance_path, index=False)
     metadata["importance"] = {
-        "type": str(cfg.ranker.importance.type),
+        "type": importance_type,
         "features": len(names),
         "report": str(importance_path),
     }

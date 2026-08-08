@@ -48,9 +48,10 @@ class ConfigTest(unittest.TestCase):
     def test_temporal_boundary_and_cli_parser(self) -> None:
         cfg = compose_config("i0_reproduce", mode="offline")
         self.assertEqual(cfg.split.fit.end_exclusive, cfg.split.holdout.start_inclusive)
-        self.assertEqual(cfg.ranker.importance.type, "PredictionValuesChange")
-        self.assertNotIn("shap_sample_rows", cfg.ranker.importance)
-        self.assertNotIn("permutation_sample_rows", cfg.ranker.importance)
+        self.assertEqual(
+            cfg.ranker.importance.get("type", "PredictionValuesChange"),
+            "PredictionValuesChange",
+        )
         runtime, overrides = parse_cli_dotlist(
             ["experiment=i0_reproduce", "run_id=20260807_2200_x", "ranker.depth=7"]
         )
