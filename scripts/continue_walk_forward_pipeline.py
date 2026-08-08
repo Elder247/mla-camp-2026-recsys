@@ -109,6 +109,11 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=int, default=20)
     parser.add_argument("--max-wait-seconds", type=int, default=7200)
     parser.add_argument(
+        "--skip-smoke",
+        action="store_true",
+        help="Skip the expensive full-history smoke after unit/config validation",
+    )
+    parser.add_argument(
         "--blend-alphas",
         default="0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1",
     )
@@ -158,10 +163,9 @@ def main() -> int:
         decision["final_artifact_promotion"] = final_promotion
         atomic_write_json(decision_path, decision)
 
-    phases = [
-        (args.smoke_run, "smoke", "offline"),
-        (args.temporal_run, "offline", "offline"),
-    ]
+    phases = [] if args.skip_smoke else [(args.smoke_run, "smoke", "offline")]
+    phases.append((args.temporal_run, "offline", "offline"))
+    decision["smoke_skipped"] = bool(args.skip_smoke)
     decision["commands"] = []
     for run_id, mode, scope in phases:
         command = pipeline_command(
