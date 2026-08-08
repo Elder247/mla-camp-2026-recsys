@@ -11,6 +11,7 @@ runtime:
 
 pipeline:
   max_parallel_cg: 1
+  max_wall_seconds: 0
   stages:
     - {name: prepare_data, script: prepare_data.py, modes: [smoke, offline, full]}
     - {name: prepare_counters, script: prepare_counters.py, modes: [smoke, offline, full]}
@@ -73,3 +74,4 @@ evaluation:
 submission:
   expected_requests: 10000
   allow_fewer_than_top_k: false
+  ranking: catboost

@@ -19,12 +19,22 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def select_ranking(metrics: dict, candidates: list[str]) -> tuple[str, float]:
+    values = [
+        (name, float(metrics[name]["50"]["sourcecost_recall"]))
+        for name in candidates
+    ]
+    # Prefer the cheaper RRF path on an exact metric tie.
+    return max(values, key=lambda item: (item[1], item[0] == "rrf"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Wait for an honest temporal gate and launch detached-safe full refit"
     )
     parser.add_argument("--temporal-run", required=True)
     parser.add_argument("--full-run", required=True)
+    parser.add_argument("--experiment", default="i1_more_cg_features_sc")
     parser.add_argument("--source-runs", type=Path, required=True)
     parser.add_argument("--output-runs", type=Path, required=True)
     parser.add_argument("--immutable-artifacts", type=Path, required=True)
@@ -34,7 +44,7 @@ def main() -> int:
         parser.error("--poll-seconds must be positive")
 
     cfg = compose_config(
-        "i1_more_cg_features_sc",
+        args.experiment,
         run_id=args.full_run,
         mode="full",
         scope="full",
@@ -72,7 +82,13 @@ def main() -> int:
     candidate_value = float(
         candidates["metrics"]["merged"]["500"]["sourcecost_recall"]
     )
-    ranker_value = float(ranker["metrics"]["catboost"]["50"]["sourcecost_recall"])
+    ranking_candidates = [
+        str(value)
+        for value in cfg.promotion_gate.get("ranking_candidates", ["catboost"])
+    ]
+    selected_ranking, ranker_value = select_ranking(
+        ranker["metrics"], ranking_candidates
+    )
     candidate_threshold = float(
         cfg.promotion_gate.candidate_sourcecost_recall_at_500
     )
@@ -88,6 +104,8 @@ def main() -> int:
         candidate_threshold=candidate_threshold,
         ranker_sourcecost_recall_at_50=ranker_value,
         ranker_threshold=ranker_threshold,
+        selected_ranking=selected_ranking,
+        ranking_candidates=ranking_candidates,
         temporal_best_iteration=best_iteration,
         full_iterations=full_iterations,
     )
@@ -98,7 +116,7 @@ def main() -> int:
     command = [
         str(cfg.paths.python),
         str(ROOT / "scripts" / "run_pipeline.py"),
-        "experiment=i1_more_cg_features_sc",
+        f"experiment={args.experiment}",
         f"run_id={args.full_run}",
         "mode=full",
         "scope=full",
@@ -107,6 +125,7 @@ def main() -> int:
         f"paths.cache={args.output_runs.parent / 'cache'}",
         f"paths.immutable_artifacts={args.immutable_artifacts}",
         f"ranker.iterations={full_iterations}",
+        f"submission.ranking={selected_ranking}",
     ]
     decision.update(status="full_running", full_started_at=utc_now(), command=command)
     atomic_write_json(decision_path, decision)

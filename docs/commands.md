@@ -74,3 +74,29 @@ CatBoost's internal objective.
 
 Legacy `./run.sh` commands remain available for frozen-baseline parity but are
 not the experiment contract.
+
+## Fast value run
+
+```bash
+nohup env -u PYTHONPATH \
+  /home/astrofimuk/workspace/step2_ce/.venv/bin/python scripts/run_pipeline.py \
+  experiment=i1_fast_value run_id=<temporal-id> mode=offline scope=offline \
+  paths.root=/home/astrofimuk/workspace/mla_two_stage_accel \
+  paths.runs=/home/astrofimuk/workspace/mla_two_stage/runs \
+  paths.cache=/home/astrofimuk/workspace/mla_two_stage/cache \
+  paths.immutable_artifacts=/home/astrofimuk/workspace/mla_two_stage/artifacts \
+  > /tmp/<temporal-id>.log 2>&1 < /dev/null &
+```
+
+After starting temporal, the detached selector can promote the better of RRF
+and CatBoost and pass that choice to full inference:
+
+```bash
+python scripts/continue_to_full.py \
+  --experiment i1_fast_value \
+  --temporal-run <temporal-id> \
+  --full-run <full-id> \
+  --source-runs /home/astrofimuk/workspace/mla_two_stage/runs \
+  --output-runs /home/astrofimuk/workspace/mla_two_stage/runs \
+  --immutable-artifacts /home/astrofimuk/workspace/mla_two_stage/artifacts
+```

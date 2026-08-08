@@ -140,3 +140,20 @@ The I1 Two-Tower wrapper encodes query batches and performs the same exact
 matrix scan/top-k against the frozen candidate embeddings. Batch size is a
 source config value. Direct batch-vs-single top-50 parity is mandatory before
 use; the first four real smoke requests matched IDs and scores exactly.
+
+## Fast value iteration
+
+`i1_fast_value` keeps only the three productive I0 sources and uses the
+holdout-verified RRF weights/quotas `TF-IDF 0.25/500`, `Two-Tower 1.25/750`
+and `legacy history 2.0/200`. The merged cache is capped at 1,000 rows and the
+natural ranker pool at 500. Feature v2 keeps retrieval, context, static/text
+groups and only the four counter families retaining most counter importance:
+region, domain, group and query. This produces 151 ordered features instead of
+276 and halves the CatBoost rows.
+
+Temporal evaluation selects the better of RRF and CatBoost by SourceCost
+Recall@50. The selected ranking method is passed to full inference. If RRF
+wins, full feature construction and CatBoost fit are omitted entirely; the
+submission is read directly from deterministic merged `pre_rank`. Each fast
+pipeline launch has a configured three-hour wall-time budget checked between
+isolated stage groups.

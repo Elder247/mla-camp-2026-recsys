@@ -6,6 +6,7 @@ import concurrent.futures
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,13 @@ def stage_commands(
     commands = []
     for stage in cfg.pipeline.stages:
         if str(cfg.runtime.mode) not in [str(value) for value in stage.modes]:
+            continue
+        if (
+            str(cfg.runtime.mode) == "full"
+            and str(cfg.submission.ranking) == "rrf"
+            and str(stage.name)
+            in {"prepare_counters", "build_features", "train_ranker"}
+        ):
             continue
         script = ROOT / "scripts" / str(stage.script)
         base_command = [
@@ -142,6 +150,17 @@ def pending_commands(
     return pending
 
 
+def enforce_run_budget(*, started: float, max_wall_seconds: int) -> None:
+    if max_wall_seconds <= 0:
+        return
+    elapsed = time.monotonic() - started
+    if elapsed >= max_wall_seconds:
+        raise TimeoutError(
+            f"Pipeline wall-time budget exhausted: {elapsed:.1f}s >= "
+            f"{max_wall_seconds}s"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the configured ML Camp pipeline as isolated subprocess stages",
@@ -176,8 +195,14 @@ def main() -> int:
 
     store = RunStore.initialize(cfg, repo_root=ROOT, resume=not args.no_resume)
     runner = StageRunner(store)
+    started = time.monotonic()
+    max_wall_seconds = int(cfg.pipeline.get("max_wall_seconds", 0))
     try:
         for group in execution_groups(cfg, commands):
+            enforce_run_budget(
+                started=started,
+                max_wall_seconds=max_wall_seconds,
+            )
             pending = pending_commands(
                 store, group, resume=bool(cfg.runtime.resume)
             )
@@ -199,7 +224,7 @@ def main() -> int:
                     ]
                     for future in futures:
                         future.result()
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (OSError, subprocess.CalledProcessError, TimeoutError) as error:
         store.finalize("failed", error=type(error).__name__)
         return 1
     store.finalize("completed")

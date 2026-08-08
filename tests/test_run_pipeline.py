@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+import time
+
+import pytest
+
 from mla_recsys.config import compose_config
-from scripts.run_pipeline import _candidate_source, execution_groups, stage_commands
+from scripts.run_pipeline import (
+    _candidate_source,
+    enforce_run_budget,
+    execution_groups,
+    stage_commands,
+)
 
 
 def test_semantic_overrides_are_forwarded_to_every_stage() -> None:
@@ -55,3 +64,24 @@ def test_i1_parallel_groups_never_overlap_gpu_and_pair_split_work() -> None:
         == {"build_features_train", "build_features_holdout"}
         for group in groups
     )
+
+
+def test_rrf_full_skips_feature_and_ranker_stages() -> None:
+    cfg = compose_config(
+        "i1_fast_value",
+        run_id="20260808_1700_rrf_full",
+        mode="full",
+        scope="full",
+        overrides=["submission.ranking=rrf"],
+    )
+    names = [name for name, _ in stage_commands(cfg)]
+    assert "prepare_counters" not in names
+    assert not any(name.startswith("build_features") for name in names)
+    assert "train_ranker" not in names
+    assert "make_submission" in names
+
+
+def test_pipeline_wall_budget_can_be_disabled_or_exhausted() -> None:
+    enforce_run_budget(started=time.monotonic() - 10.0, max_wall_seconds=0)
+    with pytest.raises(TimeoutError):
+        enforce_run_budget(started=time.monotonic() - 10.0, max_wall_seconds=1)

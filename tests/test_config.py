@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mla_recsys.config import compose_config, config_fingerprint, parse_cli_dotlist  # noqa: E402
 from mla_recsys.candidate_cache import feature_name  # noqa: E402
+from mla_recsys.feature_cache import configured_feature_names  # noqa: E402
 from mla_recsys.merge import merged_schema  # noqa: E402
 
 
@@ -98,6 +99,27 @@ class ConfigTest(unittest.TestCase):
                 {f"{alias}__present", f"{alias}__rank", f"{alias}__score"} <= names,
                 source,
             )
+
+    def test_fast_value_contract_is_compact_and_budgeted(self) -> None:
+        cfg = compose_config("i1_fast_value", mode="offline")
+        enabled = [
+            str(name)
+            for name, item in cfg.candidates.generators.items()
+            if bool(item.enabled)
+        ]
+        self.assertEqual(
+            enabled,
+            ["tfidf_v1", "two_tower_fps_v1", "history_legacy_v1"],
+        )
+        self.assertEqual(cfg.candidates.ranker_pool, 500)
+        self.assertEqual(cfg.candidates.union_max_candidates, 1000)
+        self.assertEqual(cfg.pipeline.max_wall_seconds, 10800)
+        self.assertEqual(cfg.ranker.kind, "ranker_logsc")
+        self.assertEqual(len(configured_feature_names(cfg)), 151)
+        self.assertEqual(
+            list(cfg.features.counter_families),
+            ["region", "domain", "group", "query"],
+        )
 
 
 if __name__ == "__main__":

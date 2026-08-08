@@ -30,21 +30,40 @@ def matrix(table: pa.Table, names: list[str]) -> np.ndarray:
     ).astype(np.float32, copy=False)
 
 
-def main() -> int:
-    context = load_stage_context("Batch CatBoost inference and top-50 submission")
-    cfg = context.cfg
-    if str(cfg.runtime.scope) != "full":
-        raise ValueError("make_submission requires scope=full")
+def rrf_predictions(run_path: Path) -> tuple[dict[str, tuple[int, list[int]]], list[Path]]:
+    predictions: dict[str, tuple[int, list[int]]] = {}
+    paths = sorted((run_path / "candidates" / "test" / "merged").glob("part-*.parquet"))
+    for path in paths:
+        rows = pq.read_table(
+            path,
+            columns=["request_id", "hit_log_id", "banner_id", "pre_rank"],
+        ).to_pylist()
+        grouped: dict[str, list[tuple[int, int, int]]] = {}
+        for row in rows:
+            grouped.setdefault(str(row["request_id"]), []).append(
+                (int(row["pre_rank"]), int(row["banner_id"]), int(row["hit_log_id"]))
+            )
+        for request_id, values in grouped.items():
+            values.sort(key=lambda value: (value[0], value[1]))
+            predictions[request_id] = (
+                values[0][2],
+                [value[1] for value in values[:50]],
+            )
+    return predictions, paths
+
+
+def catboost_predictions(
+    run_path: Path,
+) -> tuple[dict[str, tuple[int, list[int]]], list[Path]]:
     metadata = json.loads(
-        (context.store.path / "models" / "catboost.json").read_text(encoding="utf-8")
+        (run_path / "models" / "catboost.json").read_text(encoding="utf-8")
     )
     names = list(metadata["feature_names"])
     model = CatBoostRanker()
-    model_path = context.store.path / "models" / "catboost.cbm"
-    model.load_model(str(model_path))
+    model.load_model(str(run_path / "models" / "catboost.cbm"))
     predictions: dict[str, tuple[int, list[int]]] = {}
-    feature_paths = sorted((context.store.path / "features" / "test").glob("part-*.parquet"))
-    for path in feature_paths:
+    paths = sorted((run_path / "features" / "test").glob("part-*.parquet"))
+    for path in paths:
         table = pq.read_table(
             path,
             columns=["request_id", "hit_log_id", "banner_id", "pre_rank", *names],
@@ -52,7 +71,9 @@ def main() -> int:
         if table.num_rows == 0:
             continue
         scores = model.predict(matrix(table, names))
-        rows = table.select(["request_id", "hit_log_id", "banner_id", "pre_rank"]).to_pylist()
+        rows = table.select(
+            ["request_id", "hit_log_id", "banner_id", "pre_rank"]
+        ).to_pylist()
         grouped: dict[str, list[tuple[float, int, int, int]]] = {}
         for row, score in zip(rows, scores):
             grouped.setdefault(str(row["request_id"]), []).append(
@@ -65,7 +86,25 @@ def main() -> int:
             )
         for request_id, values in grouped.items():
             values.sort(key=lambda value: (-value[0], value[1], value[2]))
-            predictions[request_id] = (values[0][3], [value[2] for value in values[:50]])
+            predictions[request_id] = (
+                values[0][3],
+                [value[2] for value in values[:50]],
+            )
+    return predictions, paths
+
+
+def main() -> int:
+    context = load_stage_context("Batch selected-ranker inference and top-50 submission")
+    cfg = context.cfg
+    if str(cfg.runtime.scope) != "full":
+        raise ValueError("make_submission requires scope=full")
+    ranking = str(cfg.submission.ranking)
+    if ranking == "rrf":
+        predictions, prediction_inputs = rrf_predictions(context.store.path)
+    elif ranking == "catboost":
+        predictions, prediction_inputs = catboost_predictions(context.store.path)
+    else:
+        raise ValueError(f"Unsupported submission ranking: {ranking}")
 
     expected = read_request_parquet(context.store.path / "data" / "test_requests.parquet")
     missing = [row["request_id"] for row in expected if row["request_id"] not in predictions]
@@ -88,11 +127,13 @@ def main() -> int:
     output = context.store.path / "predictions" / "test_top50.parquet"
     with atomic_output_path(output) as temporary:
         pq.write_table(table, temporary, compression="zstd")
-    inputs = [fingerprint_file(model_path)] + [fingerprint_file(path) for path in feature_paths]
+    inputs = [fingerprint_file(path) for path in prediction_inputs]
+    if ranking == "catboost":
+        inputs.insert(0, fingerprint_file(context.store.path / "models" / "catboost.cbm"))
     write_output_manifest(
         output,
         stage="make_submission",
-        artifact_version="catboost_batch_top50_v1",
+        artifact_version=f"{ranking}_batch_top50_v1",
         config_sha256=config_fingerprint(cfg),
         inputs=inputs,
         rows=table.num_rows,
@@ -104,6 +145,7 @@ def main() -> int:
         "rows": table.num_rows,
         "min_items": min(len(row["BannerID"]) for row in rows),
         "max_items": max(len(row["BannerID"]) for row in rows),
+        "ranking": ranking,
     }
     atomic_write_json(context.store.path / "metrics" / "submission.json", report)
     print(json.dumps(report, indent=2))
@@ -112,4 +154,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

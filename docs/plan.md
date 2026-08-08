@@ -9,9 +9,10 @@ This file tracks implementation status only; it does not redefine priorities.
 | Audit VM/git/data/artifacts/GPU/baseline | completed | clean `main`, H100 visible through torch, schemas and legacy metrics captured |
 | Docs/config/run contract | completed | commit `786f69e`; 10 pytest + 10 legacy unittest pass |
 | Iteration 0 baseline pipeline | completed | temporal/full runs, natural pool, cache parity, strict 10k submission |
-| Iteration 1 candidate generators | in progress | implementation/smoke complete; full temporal complementarity and SC ceiling pending |
-| Iteration 1 feature v2 | in progress | implementation/smoke/schema complete; full temporal memory/timing pending |
-| Iteration 1 SC-aware CatBoost | in progress | raw-label/importance smoke complete; honest temporal gate pending |
+| Iteration 1 candidate generators | completed, rejected by gate | temporal merged SC@500 `0.686766` is below I0 `0.704875` |
+| Iteration 1 feature v2 | completed | full temporal schema, memory and timing verified |
+| Iteration 1 SC-aware CatBoost | completed, rejected by gate | temporal CatBoost SC@50 `0.616045` is below I0 `0.622388` |
+| Iteration 1.1 fast value | in progress | compact candidate/feature set selected from temporal evidence |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -125,3 +126,31 @@ Iteration 1 feature/ranker smoke evidence (`20260808_1230_i1_v2_smoke`):
   reports take 7.3 seconds with 661 MiB RSS;
 - tiny-sample RRF/CatBoost SC@50 is `0.510672/0.504502`. This is contract-only
   evidence and is not used to accept or reject I1.
+
+Iteration 1 temporal evidence (`20260808_1245_i1_temporal`):
+
+- all eight generators, both merges, cache parity and both 276-feature splits
+  completed; train/holdout feature construction took `2293.1/1225.4` seconds;
+- CatBoost fit used 4,367,000 natural-pool rows and 2,206,000 validation rows;
+  best iteration is `845`, and only native `PredictionValuesChange` importance
+  is retained;
+- merged candidate SC Recall@500 is `0.686766`, below the I0 gate
+  `0.704875`; CatBoost SC Recall@50 is `0.616045`, below `0.622388`;
+- promotion status is `gate_rejected`; the I1 full refit was intentionally not
+  launched, so the verified I0 full submission remains the accepted model.
+
+Iteration 1.1 fast-value decision:
+
+- user history has zero holdout recall; region history contributes no unique
+  clicked banners; query-region and global sources add only about `0.04%` of
+  unique SourceCost, while duplicated query-click/query-SC sources dilute RRF;
+- four counter families (region, domain, group, query) retain `6.775/7.353`
+  total counter importance; six low-value families and cross features are
+  removed;
+- an exact small RRF grid over cached I0 holdout candidates selected TF-IDF
+  weight/quota `0.25/500`, Two-Tower `1.25/750`, history `2.0/200`;
+- before any new model fit this blend gives RRF SC@50 `0.623522` and candidate
+  SC@500 `0.706017`, both above the accepted I0 thresholds;
+- the run uses 151 features, a 500-row pool, safe three-worker scheduling and a
+  three-hour configured wall budget. Temporal selection chooses the better of
+  RRF and CatBoost; an RRF-selected full run skips features and model fit.
