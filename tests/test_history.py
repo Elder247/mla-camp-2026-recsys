@@ -42,6 +42,24 @@ class HistoryRankTest(unittest.TestCase):
             {"query", "query_region"},
         )
 
+    def test_rankings_without_index_metadata_are_rejected(self) -> None:
+        model = {
+            "rankings": {
+                ("query", "кофе", 0): [
+                    (10, 3, 300.0, 5),
+                    (999, 2, 200.0, 4),
+                ]
+            },
+            "candidates": {10: {"title": "known"}},
+        }
+        result = rank(
+            model=model,
+            example={"query": "Кофе", "context": {"region_id": 213}},
+            features={},
+            top_k=10,
+        )
+        self.assertEqual([item["banner_id"] for item in result], [10])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,7 +94,12 @@ def rank(
     metadata = model["candidates"]
     result = []
     for banner_id, history in ordered:
-        candidate = metadata.get(banner_id, {})
+        candidate = metadata.get(banner_id)
+        # Rankings can outlive a rebuilt one-million-banner index.  Candidate
+        # membership must use the same frozen index contract as submission;
+        # missing metadata is therefore an invalid candidate, not an empty one.
+        if candidate is None:
+            continue
         result.append(
             {
                 "banner_id": banner_id,
