@@ -1,0 +1,51 @@
+experiment:
+  name: two_tower_v2_dcn4_mlp3_full
+
+paths:
+  proxy: kolmogorov
+  step2_root: /home/astrofimuk/workspace/step2_ce
+  train_table: //home/bm/users/argus/mla/steps/step5_bpe_dcn/train_100m
+  validation_table: //home/bm/users/argus/mla/steps/step5_bpe_dcn/val_clicks_2k
+  index_file: /home/astrofimuk/workspace/tfidf_step1/data/index_1m.parquet
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_dcn4_mlp3_full
+
+runtime:
+  device: cuda
+
+model:
+  query_cardinalities:
+    query_word_ids: 65536
+    region_ids: 65536
+  banner_cardinalities:
+    banner_id_ids: 65536
+    ad_group_id_ids: 65536
+    title_word_ids: 65536
+    text_word_ids: 65536
+  embedding_policy:
+    multiplier: 6.0
+    min_dim: 8
+    max_dim: 96
+    round_to: 8
+  hidden_dim: 256
+  output_dim: 64
+  cross_layers: 4
+  deep_layers: 3
+  dropout: 0.05
+
+training:
+  temperature: 0.07
+  batch_size: 512
+  epochs: 1
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  gradient_clip: 10.0
+  shuffle_buffer: 20000
+  seed: 2026
+  max_steps: 0
+  max_examples: 0
+  validate_every_rows: 500000
+  log_every: 100
+
+export:
+  batch_size: 8192
+  max_index_rows: 0

@@ -14,6 +14,7 @@ This file tracks implementation status only; it does not redefine priorities.
 | Iteration 1 SC-aware CatBoost | completed, rejected by gate | temporal CatBoost SC@50 `0.616045` is below I0 `0.622388` |
 | Iteration 1.1 fast value | completed, rejected by honest gate | temporal completed in 40 minutes; RRF/CatBoost SC@50 `0.609868/0.594359` |
 | Iteration 1.2 fast quality | in progress | restore deep retrieval and only high-importance query history signals |
+| TwoTower v2 | implementation/smoke completed | full-data training and temporal retrieval gate pending |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -180,3 +181,18 @@ Iteration 1.2 fast-quality decision:
   TF-IDF `0.25`, Two-Tower `1.0`, legacy history `3.0`, query-SC `2.0`; query
   click/region remain feature-only at zero RRF weight. Expected honest RRF
   SC@50 is `0.613506`; CatBoost is the primary improvement hypothesis.
+
+TwoTower v2 implementation evidence:
+
+- the existing 100m-derived prepared table has 21,813,184 clicked pairs and is
+  retained in full; the earlier 10m subsampling idea was rejected because the
+  baseline full epoch takes only minutes and data loss is not justified;
+- six independent field embeddings use configurable
+  `ceil_to_8(6 * n ** 0.25)` dimensions capped at 96;
+- both towers use four full-matrix cross layers, three deep
+  Linear/LayerNorm/GELU layers and a normalized 64-dimensional output;
+- the real-YT smoke trained two BF16 steps, used 0.85 GB peak GPU memory,
+  exported a `[1000, 64]` index and produced 4/4 exact batch-vs-single top-50
+  matches with 50 unique banners each;
+- 51/51 project tests pass before full-data training. The old Step3 artifact is
+  untouched and the new trainer refuses to overwrite non-empty artifacts.

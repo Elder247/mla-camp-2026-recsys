@@ -1,0 +1,18 @@
+extends: v2_dcn4_mlp3_full.yaml
+
+experiment:
+  name: two_tower_v2_dcn4_mlp3_smoke
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_dcn4_mlp3_smoke
+
+training:
+  shuffle_buffer: 1024
+  max_steps: 2
+  validate_every_rows: 512
+  log_every: 1
+
+export:
+  batch_size: 1024
+  max_index_rows: 1000
+

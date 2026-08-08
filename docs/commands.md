@@ -105,3 +105,26 @@ Use `i1_fast_quality` for the follow-up that restores full TF-IDF/Two-Tower
 depth, retains only high-importance query history signals, and switches back to
 the raw-SourceCost label. The launch and selector commands are identical except
 for `--experiment i1_fast_quality` / `experiment=i1_fast_quality`.
+
+## TwoTower v2
+
+Contract smoke (two train steps and a 1,000-banner export):
+
+```bash
+python scripts/train_two_tower_v2.py \
+  --config configs/two_tower/v2_dcn4_mlp3_smoke.yaml
+```
+
+Full 100m-derived click training and canonical one-million-banner export:
+
+```bash
+nohup env PYTHONUNBUFFERED=1 \
+  /home/astrofimuk/workspace/step2_ce/.venv/bin/python \
+  scripts/train_two_tower_v2.py \
+  --config configs/two_tower/v2_dcn4_mlp3_full.yaml \
+  > /tmp/two_tower_v2_dcn4_mlp3_full.terminal.log 2>&1 < /dev/null &
+```
+
+The artifact-owned log is
+`artifacts/two_tower_v2_dcn4_mlp3_full/train.log`; resolved config, metrics and
+manifest are stored in the same directory.

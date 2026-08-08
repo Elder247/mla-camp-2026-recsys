@@ -164,3 +164,24 @@ wins, full feature construction and CatBoost fit are omitted entirely; the
 submission is read directly from deterministic merged `pre_rank`. Each fast
 pipeline launch has a configured three-hour wall-time budget checked between
 isolated stage groups.
+
+## TwoTower v2
+
+The v2 retriever is implemented entirely inside `mla_two_stage/two_tower_v2`;
+`common` and the frozen Step3 artifact remain unchanged. It streams the full
+prepared 100m-derived click table (21,813,184 pairs) and keeps separate
+embedding tables for query words, region, banner ID, ad group, title words and
+text words. Per-field dimensions follow
+`ceil_to_8(6 * cardinality ** 0.25)`, capped to `[8, 96]` by config.
+
+Each tower projects the concatenated field embeddings to 256 dimensions. A
+four-layer full-matrix DCNv2 branch and a three-layer
+Linear/LayerNorm/GELU branch run in parallel; their outputs are concatenated,
+projected to 64 dimensions and L2-normalized. Training preserves the proven
+sampled-softmax objective with batch size 512 (one positive and 511 in-batch
+negatives), BF16 autocast and a full epoch. No training-row subsampling is used.
+
+Training writes a new immutable artifact directory with resolved YAML, model,
+one-million-banner embeddings/metadata, terminal log, metrics and manifest. It
+refuses to overwrite a non-empty artifact. The v2 batch generator uses the
+same exact matrix scan/top-k contract as the baseline retriever.
