@@ -9,6 +9,7 @@ from scripts.run_pipeline import (
     _candidate_source,
     enforce_run_budget,
     execution_groups,
+    stage_tracking_metrics,
     stage_commands,
 )
 
@@ -85,3 +86,21 @@ def test_pipeline_wall_budget_can_be_disabled_or_exhausted() -> None:
     enforce_run_budget(started=time.monotonic() - 10.0, max_wall_seconds=0)
     with pytest.raises(TimeoutError):
         enforce_run_budget(started=time.monotonic() - 10.0, max_wall_seconds=1)
+
+
+def test_stage_tracking_metrics_have_stable_names_and_megabytes() -> None:
+    metrics = stage_tracking_metrics(
+        {
+            "stage": "train_ranker",
+            "status": "completed",
+            "wall_seconds": 12.5,
+            "peak_rss_bytes": 2 * 1024 * 1024,
+            "peak_gpu_memory_bytes": 3 * 1024 * 1024,
+        }
+    )
+    assert metrics == {
+        "stage/train_ranker/completed": 1.0,
+        "stage/train_ranker/wall_seconds": 12.5,
+        "stage/train_ranker/peak_rss_mb": 2.0,
+        "stage/train_ranker/peak_gpu_memory_mb": 3.0,
+    }

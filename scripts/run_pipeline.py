@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import csv
 import json
 import subprocess
 import sys
@@ -15,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from mla_recsys.artifacts import RunStore  # noqa: E402
 from mla_recsys.config import compose_config, parse_cli_dotlist  # noqa: E402
 from mla_recsys.stage_runner import StageRunner  # noqa: E402
+from mla_recsys.tracking import UnderdeepTracker, numeric_metrics  # noqa: E402
 
 
 def stage_commands(
@@ -161,6 +163,42 @@ def enforce_run_budget(*, started: float, max_wall_seconds: int) -> None:
         )
 
 
+def stage_tracking_metrics(value: dict[str, object]) -> dict[str, float]:
+    stage = str(value["stage"])
+    metrics = {
+        f"stage/{stage}/completed": float(value.get("status") == "completed"),
+        f"stage/{stage}/wall_seconds": float(value.get("wall_seconds") or 0.0),
+        f"stage/{stage}/peak_rss_mb": float(value.get("peak_rss_bytes") or 0.0)
+        / (1024.0 * 1024.0),
+    }
+    peak_gpu = value.get("peak_gpu_memory_bytes")
+    if peak_gpu is not None:
+        metrics[f"stage/{stage}/peak_gpu_memory_mb"] = float(peak_gpu) / (
+            1024.0 * 1024.0
+        )
+    return metrics
+
+
+def final_tracking_metrics(store: RunStore, cfg: object) -> dict[str, float]:
+    result = store.read_result()
+    metrics = numeric_metrics(result, prefix="run")
+    importance_path = store.path / "reports" / "feature_importance.csv"
+    if importance_path.is_file():
+        limit = int(cfg.tracking.underdeep.get("feature_importance_top_n", 20))
+        with importance_path.open(encoding="utf-8", newline="") as source:
+            rows = list(csv.DictReader(source))[:limit]
+        for rank, row in enumerate(rows, start=1):
+            raw_name = row.get("Feature Id") or row.get("Feature") or f"rank_{rank}"
+            safe_name = "".join(
+                char if char.isalnum() or char in "_-" else "_"
+                for char in str(raw_name)
+            )
+            raw_value = row.get("Importances") or row.get("Importance")
+            if raw_value is not None:
+                metrics[f"feature_importance/{rank:02d}_{safe_name}"] = float(raw_value)
+    return metrics
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the configured ML Camp pipeline as isolated subprocess stages",
@@ -195,7 +233,33 @@ def main() -> int:
 
     store = RunStore.initialize(cfg, repo_root=ROOT, resume=not args.no_resume)
     runner = StageRunner(store)
+    tracker = UnderdeepTracker(
+        artifact_dir=store.path,
+        tracking_cfg=cfg.tracking.underdeep,
+        run_name=(
+            f"{cfg.tracking.underdeep.run_name_prefix}-{cfg.runtime.run_id}"
+        ),
+        description=(
+            "ML Camp two-stage pipeline with temporal validation, natural "
+            "candidate pools and SourceCost-aware ranking"
+        ),
+        parameters={
+            "run_id": str(cfg.runtime.run_id),
+            "experiment": str(cfg.experiment.name),
+            "mode": str(cfg.runtime.mode),
+            "scope": str(cfg.runtime.scope),
+            "config_sha256": store.config_sha256,
+        },
+        tags=[
+            "mla-camp",
+            "recsys",
+            "two-stage",
+            str(cfg.runtime.mode),
+            str(cfg.experiment.name),
+        ],
+    )
     started = time.monotonic()
+    tracking_step = 0
     max_wall_seconds = int(cfg.pipeline.get("max_wall_seconds", 0))
     try:
         for group in execution_groups(cfg, commands):
@@ -208,7 +272,9 @@ def main() -> int:
             )
             if len(pending) == 1:
                 stage, command = pending[0]
-                runner.run(stage, command, cwd=ROOT)
+                value = runner.run(stage, command, cwd=ROOT)
+                tracking_step += 1
+                tracker.log(tracking_step, stage_tracking_metrics(value))
             elif pending:
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=len(pending)
@@ -223,11 +289,17 @@ def main() -> int:
                         for stage, command in pending
                     ]
                     for future in futures:
-                        future.result()
+                        value = future.result()
+                        tracking_step += 1
+                        tracker.log(tracking_step, stage_tracking_metrics(value))
     except (OSError, subprocess.CalledProcessError, TimeoutError) as error:
         store.finalize("failed", error=type(error).__name__)
+        tracker.log_summary(final_tracking_metrics(store, cfg))
+        tracker.close(error=type(error).__name__)
         return 1
     store.finalize("completed")
+    tracker.log_summary(final_tracking_metrics(store, cfg))
+    tracker.close()
     return 0
 
 

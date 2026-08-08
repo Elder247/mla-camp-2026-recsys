@@ -2,6 +2,15 @@ project:
   name: mla_two_stage
   seed: 2026
 
+tracking:
+  underdeep:
+    enabled: true
+    project: camp-2026
+    experiment: modern-plumber
+    run_name_prefix: mla-two-stage
+    finish_timeout_seconds: 30
+    feature_importance_top_n: 20
+
 runtime:
   run_id: null
   scope: offline

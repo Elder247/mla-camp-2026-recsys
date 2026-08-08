@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 ranker = ["catboost>=1.2.10,<2"]
 yandex = ["yql>=1.2.128", "yandex-yt"]
+monitoring = ["yandex-underdeep==1.0.58"]
 dev = ["pytest>=8,<9"]
 
 [tool.ruff]
