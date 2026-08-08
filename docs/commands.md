@@ -128,3 +128,48 @@ nohup env PYTHONUNBUFFERED=1 \
 The artifact-owned log is
 `artifacts/two_tower_v2_dcn4_mlp3_full/train.log`; resolved config, metrics and
 manifest are stored in the same directory.
+
+## 10M weekly OOF and automatic end-to-end chain
+
+Validate the modifying YQL before launch, then create the versioned weekly
+table. The token value is never passed on the command line:
+
+```bash
+python scripts/prepare_two_tower_weekly_dataset.py \
+  --config configs/two_tower/v2_walk_forward_10m.yaml --validate-only
+python scripts/prepare_two_tower_weekly_dataset.py \
+  --config configs/two_tower/v2_walk_forward_10m.yaml
+python scripts/query_two_tower_week_stats.py \
+  --config configs/two_tower/v2_walk_forward_10m.yaml
+```
+
+Weekly training can be run directly or by its detached supervisor:
+
+```bash
+python scripts/train_two_tower_walk_forward.py \
+  --config configs/two_tower/v2_walk_forward_10m.yaml
+python scripts/continue_walk_forward_training.py \
+  --config configs/two_tower/v2_walk_forward_10m.yaml
+```
+
+The current complete detached chain is:
+
+```bash
+nohup python scripts/continue_walk_forward_pipeline.py \
+  --training-state /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m/training_supervisor.json \
+  --experiment i2_walk_forward_10m_fast_quality \
+  --smoke-run 20260808_1820_i2_wf10m_smoke \
+  --temporal-run 20260808_1830_i2_wf10m_temporal \
+  --full-run 20260808_2030_i2_wf10m_full \
+  --python /home/astrofimuk/workspace/step2_ce/.venv/bin/python \
+  --runs /home/astrofimuk/workspace/mla_two_stage/runs \
+  --cache /home/astrofimuk/workspace/mla_two_stage/cache \
+  --immutable-artifacts /home/astrofimuk/workspace/mla_two_stage/artifacts \
+  > /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m/pipeline_sequence.terminal.log \
+  2>&1 < /dev/null &
+```
+
+It waits for weekly training, runs smoke, then fixed temporal validation,
+selects RRF or CatBoost by SC Recall@50, and launches full only when candidate
+SC@500 and ranker SC@50 exceed their configured gates. All pipeline runs log to
+UnderDeep `camp-2026/modern-plumber` and keep a local JSONL fallback.

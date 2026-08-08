@@ -30,4 +30,8 @@ These invariants are review blockers.
     run can only be inspected or reused after fingerprint/schema validation.
 12. DeepRanker and broad Optuna remain disabled until Iterations 0 and 1 pass
     their documented gates.
-
+13. Learned OOF retrieval predicts before updating on the target week. The
+    CatBoost pool for that row must use the corresponding pre-update snapshot;
+    a final model trained through all weeks is valid only for later val/test.
+14. UnderDeep is observability, not a dependency. Every event is first written
+    to a masked local backup; missing tokens/client/network must not fail a run.

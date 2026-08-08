@@ -60,6 +60,8 @@ runs/<run_id>/
   models/
   reports/{timing,feature_importance,source_complementarity}.csv
   predictions/{holdout,test}_top50.parquet
+  underdeep_run.json
+  underdeep_metrics.jsonl
 ```
 
 `manifest.json` records git state, host, GPU, package versions and input
@@ -67,6 +69,13 @@ fingerprints without reading secret values. `result.json` is updated atomically.
 Each parquet/model has an adjacent output manifest containing config/input
 fingerprints, schema, row count, size and content fingerprint. Resume requires
 all expected fields and an existing output to match.
+
+The orchestrator creates one UnderDeep run in project `camp-2026`, experiment
+`modern-plumber`. Stage wall/RSS values, temporal candidate/ranker metrics and
+the configured top native CatBoost importances are uploaded.
+`underdeep_metrics.jsonl` is written before every remote call. UnderDeep uses a
+buffered `StopSendingData` policy and a bounded finish timeout; missing client,
+token or network therefore degrades to local-only tracking.
 
 ## Scope separation
 
@@ -185,3 +194,46 @@ Training writes a new immutable artifact directory with resolved YAML, model,
 one-million-banner embeddings/metadata, terminal log, metrics and manifest. It
 refuses to overwrite a non-empty artifact. The v2 batch generator uses the
 same exact matrix scan/top-k contract as the baseline retriever.
+
+## 10M walk-forward OOF cycle
+
+`two_tower_v2_walk_forward_10m` is the fast honest development cycle. The raw
+10M table contains 2,180,453 clicked pairs across eight contiguous Monday UTC
+weeks. A versioned YQL stage materializes only fields required by the
+TwoTower, sorted by `(week_start, show_time)`. The 1M option is reserved for
+contract smoke because it is too small for stable weekly ranker data. The 100M
+variant remains a later final-data option after the 10M gate.
+
+For week `w`, execution order is fixed in `schedule.json`:
+
+1. export the current model and one-million-banner embeddings;
+2. freeze candidates for sampled requests from week `w`;
+3. attach that week's click/SourceCost targets only after membership freezes;
+4. update the same model and optimizer on all clicks from week `w`;
+5. checkpoint model plus optimizer, then continue to `w + 1`.
+
+The first week is predicted by the seeded random model. Each later week uses a
+checkpoint trained only through earlier weeks. A separate final snapshot,
+trained through all eight weeks, serves the later fixed validation/test dates.
+The generator chooses a snapshot from request `show_time`; it never uses the
+final model for an OOF week.
+
+Sampling keeps 750 deterministic request hashes per week (up to 6,000 OOF
+groups) and preserves multi-click targets. The same streaming pass writes a
+compact 2.18M-row history-event parquet. Query, query-region, user and global
+candidate sources consume it with a strict `event_time < request_time`
+boundary. Static full-history generators and the old full-data TwoTower are
+disabled for OOF because their own-week labels would leak.
+
+The temporal CatBoost train split is `weekly OOF + the original 6,499 fit
+requests`; the unchanged 3,500-request holdout remains the promotion gate.
+Full ranker data is `weekly OOF + all 9,999 validation requests`. Each scope
+fits CatBoost exactly once from its natural 500-candidate pools. Full remains a
+distinct post-selection fit, not a second fit inside temporal validation.
+
+The 10M config retains TF-IDF, weekly TwoTower, past-only query/query-region,
+user and global generators. Existing honest feature importance keeps only
+query and region counter families; native static/retrieval/text features
+remain. Counter lookup streams parquet and materializes only configured
+families. Merge uses compact Arrow dictionaries and partition workers; neither
+optimization introduces target-dependent candidate injection.

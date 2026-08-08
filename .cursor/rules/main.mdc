@@ -13,3 +13,6 @@ Do not refactor `common/`, inject positives into candidate pools, use non-tempor
 model-selection splits, mix offline/full artifacts, hardcode experiment values,
 or reuse a cache without matching fingerprints and schema validation.
 
+Weekly OOF candidates must use the snapshot exported before training on that
+week. UnderDeep is configured observability only: never read/print tokens and
+never fail computation when remote logging is unavailable.

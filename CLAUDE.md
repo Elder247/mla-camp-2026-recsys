@@ -21,3 +21,6 @@ Never inject targets into candidate pools, change the temporal split between
 experiments, mix `offline` and `full` counters, read token values, or commit
 data/models/runs.
 
+For learned OOF retrieval, always select the pre-update snapshot from request
+week. UnderDeep logging must remain fail-open and retain its masked local JSONL
+backup before remote transmission.

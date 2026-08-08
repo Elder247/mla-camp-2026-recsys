@@ -13,8 +13,9 @@ This file tracks implementation status only; it does not redefine priorities.
 | Iteration 1 feature v2 | completed | full temporal schema, memory and timing verified |
 | Iteration 1 SC-aware CatBoost | completed, rejected by gate | temporal CatBoost SC@50 `0.616045` is below I0 `0.622388` |
 | Iteration 1.1 fast value | completed, rejected by honest gate | temporal completed in 40 minutes; RRF/CatBoost SC@50 `0.609868/0.594359` |
-| Iteration 1.2 fast quality | in progress | restore deep retrieval and only high-importance query history signals |
-| TwoTower v2 | implementation/smoke completed | full-data training and temporal retrieval gate pending |
+| Iteration 1.2 fast quality | completed, not promoted | honest RRF/CatBoost SC@50 `0.613506/0.613103` |
+| TwoTower v2 full | completed | 21.8M pairs; probe SC@500 `0.707873`, SC@50 `0.518348` |
+| 10M weekly OOF cycle | running | 8 weeks/2.18M clicks; smoke → temporal → gated full detached chain armed |
 | Iteration 2/3 | blocked by design | do not start before Iterations 0/1 reproduce |
 
 Implementation proceeds in small commits matching these blocks. Architecture
@@ -196,3 +197,23 @@ TwoTower v2 implementation evidence:
   matches with 50 unique banners each;
 - 51/51 project tests pass before full-data training. The old Step3 artifact is
   untouched and the new trainer refuses to overwrite non-empty artifacts.
+
+10M weekly OOF implementation evidence:
+
+- raw `train_10m` is exactly 10,000,000 rows and yields 2,180,453 clicks across
+  eight contiguous weeks; its read-only week-stat query completed in 7.6s;
+- the lifecycle contract is `predict -> freeze_pool -> attach_labels -> update`;
+  model plus optimizer checkpoints make it resume-safe by week;
+- 750 deterministic OOF request groups per week and a compact full click-event
+  stream are produced in one pass;
+- snapshot-aware batch inference, external strict-ASOF query/user/global
+  history, OOF/validation disjointness and configured-family counters have unit
+  coverage; the full project suite passes 64/64 before supervisors;
+- static history and the old full-data tower are excluded from OOF pools;
+  temporal/full each train CatBoost once, and full remains gate-controlled;
+- pipeline and model tracking use UnderDeep `camp-2026/modern-plumber` with a
+  masked local JSONL fallback; the required client is installed and only token
+  presence was checked;
+- weekly preparation, model training, smoke, temporal promotion and full are
+  detached sequential processes, so loss of the local internet connection does
+  not stop them.

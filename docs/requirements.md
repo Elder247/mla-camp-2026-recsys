@@ -74,5 +74,8 @@ They are not valid model-selection metrics after the temporal contract lands.
   new versioned artifact is explicitly created.
 - Token values are never read, printed, logged or committed. Code may check only
   whether a required file/environment variable exists.
+- Every production smoke/temporal/full run is linked to UnderDeep project
+  `camp-2026`, experiment `modern-plumber`. Tracking is fail-open and always
+  keeps a masked local JSONL backup, so a tracking/network outage cannot stop
+  model computation.
 - Data, model binaries, large parquet files and run directories are gitignored.
-
