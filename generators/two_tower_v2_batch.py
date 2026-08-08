@@ -35,7 +35,11 @@ def feature_schema() -> list[dict[str, Any]]:
     return []
 
 
-def load_model(artifact_dir: Path) -> dict[str, Any]:
+def load_model(
+    artifact_dir: Path,
+    *,
+    candidate_metadata: dict[str, list[Any]] | None = None,
+) -> dict[str, Any]:
     import pyarrow.parquet as pq
 
     paths = [
@@ -58,7 +62,11 @@ def load_model(artifact_dir: Path) -> dict[str, Any]:
     candidate_vectors = torch.from_numpy(
         np.array(np.load(paths[1], mmap_mode="r"), dtype=np.float16, copy=True)
     ).to(device)
-    metadata = pq.read_table(paths[2]).to_pydict()
+    metadata = (
+        candidate_metadata
+        if candidate_metadata is not None
+        else pq.read_table(paths[2]).to_pydict()
+    )
     if len(metadata["banner_id"]) != candidate_vectors.shape[0]:
         raise ValueError("candidate metadata and embeddings have different sizes")
     return {

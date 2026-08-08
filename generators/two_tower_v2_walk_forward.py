@@ -41,6 +41,7 @@ def load_model(artifact_dir: Path) -> dict[str, Any]:
         "final": final,
         "active_path": None,
         "active_model": None,
+        "shared_candidate_metadata": None,
         "metadata": {
             "solution": SOLUTION_NAME,
             "weeks": sorted(snapshots),
@@ -66,7 +67,12 @@ def _activate(model: dict[str, Any], path: Path) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    loaded = base.load_model(path)
+    loaded = base.load_model(
+        path,
+        candidate_metadata=model.get("shared_candidate_metadata"),
+    )
+    if model.get("shared_candidate_metadata") is None:
+        model["shared_candidate_metadata"] = loaded["candidate_metadata"]
     model["active_model"] = loaded
     model["active_path"] = path
     return loaded
