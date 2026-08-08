@@ -8,7 +8,7 @@ This file tracks implementation status only; it does not redefine priorities.
 |---|---|---|
 | Audit VM/git/data/artifacts/GPU/baseline | completed | clean `main`, H100 visible through torch, schemas and legacy metrics captured |
 | Docs/config/run contract | completed | commit `786f69e`; 10 pytest + 10 legacy unittest pass |
-| Iteration 0 baseline pipeline | in progress | temporal/natural pool, cache parity, reproducible honest baseline |
+| Iteration 0 baseline pipeline | completed | temporal/full runs, natural pool, cache parity, strict 10k submission |
 | Iteration 1 candidate generators | pending | complementarity and SC ceiling gates |
 | Iteration 1 feature v2 | pending | chunk parity, leakage-safe schema, memory/timing report |
 | Iteration 1 SC-aware CatBoost | pending | honest SC@50 win, importance, validated batch prediction |
@@ -25,3 +25,33 @@ Iteration 0 smoke evidence:
 - natural positives: train 16/20, holdout 11/20; misses stayed out of fit;
 - candidate and ranker metrics were identical across runs;
 - direct and cached top-50 matched for all 40 requests in the repeat run.
+
+Iteration 0 temporal evidence (`20260807_1845_i0_temporal`):
+
+- fixed split: 6,499 fit and 3,500 holdout request groups;
+- natural top-500: 4,305/6,499 fit groups and 2,198/3,500 holdout
+  groups contain a retrieved positive; 2,194/1,302 misses remain uninjected;
+- holdout RRF Recall@50 / SC Recall@50: `0.517566 / 0.610910`;
+- holdout CatBoost Recall@50 / SC Recall@50: `0.523279 / 0.622388`;
+- candidate SC ceiling at 500: `0.704875`; source complementarity and feature
+  importance are persisted in the run;
+- 17/17 post-run tests passed; sampled direct/cache parity checked 40 requests
+  with zero mismatches; 323 parquet manifests have two candidate schemas and
+  one feature schema.
+
+Iteration 0 full evidence (`20260808_0040_i0_full`):
+
+- full-train/test merged rows: 18,193,769 / 18,201,657; feature rows:
+  4,999,500 / 5,000,000;
+- full sampled direct/cache parity: 40 requests, zero mismatches;
+- batch prediction: 10,000 HitLogIDs, exactly 50 unique indexed BannerIDs per
+  row; strict validation `ok=true`, zero short/unknown/error rows;
+- a first validation correctly rejected 10,661 unknown values originating only
+  from stale history rankings; commit `12f0c33` now rejects history candidates
+  absent from frozen index metadata, and the resumed history cache has zero
+  unknown IDs;
+- final run contract contains 327 output manifests, one feature schema and two
+  candidate schemas; the run occupies 1.3 GiB and records a peak pipeline RSS
+  upper bound of 8.27 GiB;
+- the full run records its initial SHA plus append-only clean resume SHAs and
+  finishes with `status=completed` and no stale error.
