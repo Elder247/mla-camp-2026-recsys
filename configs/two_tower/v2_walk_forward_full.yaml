@@ -16,6 +16,7 @@ paths:
   weekly_train_table: //home/astrofimuk/mla_two_stage/two_tower_v2_weekly/train_clicks_v1
   week_stats_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward/week_stats.parquet
   oof_requests_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward/oof_requests.parquet
+  history_events_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward/history_events.parquet
   artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward
 
 walk_forward:

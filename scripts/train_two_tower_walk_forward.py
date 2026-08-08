@@ -135,12 +135,14 @@ def main() -> int:
     atomic_json(artifact_dir / "schedule.json", {"weeks": week_rows, "events": schedule})
 
     oof_path = Path(str(cfg.paths.oof_requests_file))
-    if not oof_path.is_file():
+    history_path = Path(str(cfg.paths.history_events_file))
+    if not oof_path.is_file() or not history_path.is_file():
         report = extract_oof_requests(
             rows=iter_request_rows(cfg),
             weeks=weeks,
             requests_per_week=int(cfg.walk_forward.requests_per_week),
             output=oof_path,
+            history_output=history_path,
         )
         atomic_json(artifact_dir / "oof_requests.json", report)
 

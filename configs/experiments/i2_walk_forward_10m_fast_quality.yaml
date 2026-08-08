@@ -1,0 +1,118 @@
+experiment:
+  name: i2_walk_forward_10m_fast_quality
+  description: Leakage-safe 10M weekly OOF TwoTower and one CatBoost fit
+
+promotion_gate:
+  candidate_sourcecost_recall_at_500: 0.6906686
+  ranker_sourcecost_recall_at_50: 0.6160454
+  ranking_candidates: [rrf, catboost]
+
+pipeline:
+  max_parallel_cg: 3
+  merge_partition_workers: 2
+  feature_partition_workers: 2
+  max_wall_seconds: 10800
+
+walk_forward_ranker:
+  enabled: true
+  oof_requests_path_key: two_tower_v2_walk_forward_oof_requests
+  history_events_path_key: two_tower_v2_walk_forward_history_events
+
+candidates:
+  reuse_run: ${paths.previous_i2_temporal_run}
+  rrf_constant: 40.0
+  union_max_candidates: 500
+  ranker_pool: 500
+  generators:
+    tfidf_v1:
+      enabled: true
+      parallel_priority: 100
+      feature_name: tfidf
+      code_path_key: tfidf_code
+      artifact_path_key: tfidf_artifact
+      python_path_keys: [tfidf_root]
+      quota: 1000
+      top_k: 1000
+      weight: 0.25
+    two_tower_v2_walk_forward:
+      enabled: true
+      resource: gpu
+      feature_name: two_tower_v2_walk_forward
+      code_path_key: two_tower_v2_walk_forward_code
+      code_dependency_path_keys:
+        - two_tower_v2_code
+        - two_tower_v2_model_code
+        - two_tower_v2_data_code
+        - two_tower_v2_training_code
+        - two_tower_v2_walk_forward_model_code
+      artifact_path_key: two_tower_v2_walk_forward_artifact
+      python_path_keys: [root, step2_root]
+      quota: 1000
+      top_k: 1000
+      weight: 1.25
+      batch_size: 256
+    history_query_sc_oof_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: history_query_sc_oof
+      quota: 200
+      top_k: 200
+      weight: 2.0
+      min_clicks: 1
+      bayes_prior: 0.0
+      external_events_path_key: two_tower_v2_walk_forward_history_events
+    history_query_region_oof_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: history_query_region_oof
+      quota: 150
+      top_k: 150
+      weight: 0.5
+      min_clicks: 1
+      bayes_prior: 0.0
+      external_events_path_key: two_tower_v2_walk_forward_history_events
+    history_user_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: history_user
+      quota: 100
+      top_k: 100
+      weight: 0.75
+      min_clicks: 1
+      bayes_prior: 0.0
+      external_events_path_key: two_tower_v2_walk_forward_history_events
+    global_pop_sc_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: global_pop_sc
+      quota: 75
+      top_k: 75
+      weight: 0.75
+      min_clicks: 2
+      bayes_prior: 20.0
+      external_events_path_key: two_tower_v2_walk_forward_history_events
+
+features:
+  version: feature_v2_walk_forward_10m
+  counter_version: click_events_asof_external_10m_v1
+  counter_windows_days: [7, 28, 0]
+  counter_families: [banner, query, region, user]
+  enabled:
+    - retrieval_provenance_v2
+    - request_context_v2
+    - candidate_static_v2
+    - text_match_v2
+    - weekly_counters_v1
+
+ranker:
+  version: catboost_raw_sc_walk_forward_10m_v1
+  kind: ranker_raw_sc_label
+  iterations: 900
+  depth: 8
+  learning_rate: 0.04
+  l2_leaf_reg: 7.0
+  raw_sc_scale: 1000000.0
+
+evaluation:
+  complementarity_baseline_sources: [tfidf_v1]
+  high_value_quantile: 0.9

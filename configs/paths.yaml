@@ -16,14 +16,20 @@ paths:
   step3_code: ${paths.root}/code_maxim/step3_fps/inference.py
   two_tower_batch_code: ${paths.root}/generators/two_tower_batch.py
   two_tower_v2_code: ${paths.root}/generators/two_tower_v2_batch.py
+  two_tower_v2_walk_forward_code: ${paths.root}/generators/two_tower_v2_walk_forward.py
   two_tower_v2_model_code: ${paths.root}/two_tower_v2/model.py
   two_tower_v2_data_code: ${paths.root}/two_tower_v2/data.py
   two_tower_v2_training_code: ${paths.root}/two_tower_v2/training.py
+  two_tower_v2_walk_forward_model_code: ${paths.root}/two_tower_v2/walk_forward.py
   step2_inference_code: ${paths.step2_root}/code_maxim/step2_ce/inference.py
   step2_model_code: ${paths.step2_root}/code_maxim/step2_ce/model.py
   step3_artifact: ${paths.immutable_artifacts}/step3_fps
   two_tower_v2_artifact: ${paths.immutable_artifacts}/two_tower_v2_dcn4_mlp3_full
+  two_tower_v2_walk_forward_artifact: ${paths.immutable_artifacts}/two_tower_v2_walk_forward_10m
+  two_tower_v2_walk_forward_oof_requests: ${paths.two_tower_v2_walk_forward_artifact}/oof_requests.parquet
+  two_tower_v2_walk_forward_history_events: ${paths.two_tower_v2_walk_forward_artifact}/history_events.parquet
   history_code: ${paths.root}/generators/history.py
   history_variants_code: ${paths.root}/generators/history_variants.py
   history_artifact: ${paths.immutable_artifacts}/history
   legacy_catboost_prediction: ${paths.root}/run/predictions/catboost_test_top50.parquet
+  previous_i2_temporal_run: ${paths.runs}/20260808_1610_i2_tt_v2_temporal

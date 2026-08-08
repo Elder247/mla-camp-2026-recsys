@@ -111,13 +111,43 @@ def main() -> int:
         request_path = context.store.path / "data" / f"{source_split}_requests.parquet"
         banner_index_path = Path(str(cfg.paths.banner_index))
         requests = read_request_parquet(request_path)
-        rows = _event_rows(requests, banner_index_path)
-        table = pa.Table.from_pylist(rows, schema=COUNTER_EVENT_SCHEMA)
-        output = output_dir / "click_events.parquet"
+        external_key = cfg.get("walk_forward_ranker", {}).get(
+            "history_events_path_key"
+        )
+        external_path = (
+            Path(str(cfg.paths[str(external_key)])) if external_key else None
+        )
+        local_requests = requests
         inputs = [fingerprint_file(request_path), fingerprint_file(banner_index_path)]
+        if external_path is not None:
+            if not external_path.is_file():
+                raise FileNotFoundError(
+                    f"Walk-forward history events are missing: {external_path}"
+                )
+            # Raw OOF clicks are already present in the external predict-before-
+            # update stream. Only later validation clicks are appended locally.
+            local_requests = [
+                row
+                for row in requests
+                if not str(row["request_id"]).startswith("oof:")
+            ]
+            external_table = pq.read_table(
+                external_path, schema=COUNTER_EVENT_SCHEMA
+            )
+            local_table = pa.Table.from_pylist(
+                _event_rows(local_requests, banner_index_path),
+                schema=COUNTER_EVENT_SCHEMA,
+            )
+            table = pa.concat_tables([external_table, local_table])
+            inputs.append(fingerprint_file(external_path))
+        else:
+            rows = _event_rows(local_requests, banner_index_path)
+            table = pa.Table.from_pylist(rows, schema=COUNTER_EVENT_SCHEMA)
+        output = output_dir / "click_events.parquet"
         version = str(cfg.features.counter_version)
         semantics = (
-            "click-only events; train/full_train lookup is strict show_time < row; "
+            "click-only events including configured external OOF history; "
+            "train/full_train lookup is strict show_time < row; "
             "holdout/test state is frozen at scope cutoff"
         )
 

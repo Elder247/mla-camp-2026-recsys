@@ -193,6 +193,35 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(cfg.pipeline.merge_partition_workers, 2)
         self.assertEqual(cfg.pipeline.feature_partition_workers, 2)
 
+    def test_walk_forward_10m_uses_only_oof_safe_learned_sources(self) -> None:
+        cfg = compose_config("i2_walk_forward_10m_fast_quality", mode="offline")
+        enabled = [
+            str(name)
+            for name, item in cfg.candidates.generators.items()
+            if bool(item.enabled)
+        ]
+        self.assertEqual(
+            enabled,
+            [
+                "tfidf_v1",
+                "two_tower_v2_walk_forward",
+                "history_query_sc_oof_v1",
+                "history_query_region_oof_v1",
+                "history_user_v1",
+                "global_pop_sc_v1",
+            ],
+        )
+        self.assertTrue(cfg.walk_forward_ranker.enabled)
+        self.assertEqual(cfg.candidates.ranker_pool, 500)
+        self.assertEqual(cfg.candidates.union_max_candidates, 500)
+        self.assertEqual(cfg.pipeline.max_wall_seconds, 10800)
+        self.assertEqual(cfg.ranker.importance.type, "PredictionValuesChange")
+        for name in enabled[2:]:
+            self.assertEqual(
+                cfg.candidates.generators[name].external_events_path_key,
+                "two_tower_v2_walk_forward_history_events",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

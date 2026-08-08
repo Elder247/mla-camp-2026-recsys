@@ -13,12 +13,18 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.nn import functional as F
 
-from mla_recsys.counters import week_start
+from mla_recsys.counters import (
+    COUNTER_EVENT_SCHEMA,
+    scalar_key,
+    stable_text_key,
+    week_start,
+)
 from mla_recsys.data import write_request_parquet
 from two_tower_v2.data import YtWeekTableSource, batches, pack_bags, shuffled_rows
 from two_tower_v2.training import (
@@ -293,6 +299,7 @@ def extract_oof_requests(
     weeks: Sequence[int],
     requests_per_week: int,
     output: Path,
+    history_output: Path | None = None,
 ) -> dict[str, Any]:
     """Deterministically keep the smallest request hashes in every week."""
 
@@ -300,44 +307,87 @@ def extract_oof_requests(
         raise ValueError("requests_per_week must be positive")
     selected: dict[int, dict[str, dict[str, Any]]] = {week: {} for week in weeks}
     heaps: dict[int, list[tuple[int, str]]] = {week: [] for week in weeks}
-    for raw in rows:
-        timestamp = int(raw["show_time"])
-        week = week_start(timestamp)
-        if week not in selected:
-            continue
-        request_id = _request_key(raw)
-        bucket = selected[week]
-        if request_id in bucket:
-            banner_id = int(raw["banner_id"])
-            if banner_id not in bucket[request_id]["clicked_banner_ids"]:
-                bucket[request_id]["clicked_banner_ids"].append(banner_id)
-                bucket[request_id]["clicked_source_costs"].append(
-                    float(raw.get("source_cost") or 0.0)
-                )
-            continue
-        priority = int(request_id[-16:], 16)
-        if len(bucket) >= requests_per_week and priority >= -heaps[week][0][0]:
-            continue
-        if len(bucket) >= requests_per_week:
-            _, removed = heapq.heappop(heaps[week])
-            bucket.pop(removed, None)
-        hit_log_id = int.from_bytes(
-            hashlib.sha1(request_id.encode("utf-8")).digest()[:8], "little"
+    history_writer = None
+    history_temporary = None
+    history_buffer: list[dict[str, Any]] = []
+    history_rows = 0
+    if history_output is not None:
+        history_output.parent.mkdir(parents=True, exist_ok=True)
+        history_temporary = history_output.with_suffix(history_output.suffix + ".tmp")
+        history_temporary.unlink(missing_ok=True)
+        history_writer = pq.ParquetWriter(
+            history_temporary, COUNTER_EVENT_SCHEMA, compression="zstd"
         )
-        bucket[request_id] = {
-            "request_id": request_id,
-            "hit_log_id": hit_log_id,
-            "show_time": timestamp,
-            "query": str(raw.get("query") or ""),
-            "region_id": raw.get("region_id"),
-            "crypta_id_v2": raw.get("crypta_id_v2"),
-            "device": raw.get("device"),
-            "age": raw.get("age"),
-            "gender": raw.get("gender"),
-            "clicked_banner_ids": [int(raw["banner_id"])],
-            "clicked_source_costs": [float(raw.get("source_cost") or 0.0)],
-        }
-        heapq.heappush(heaps[week], (-priority, request_id))
+
+    def flush_history() -> None:
+        nonlocal history_rows
+        if history_writer is None or not history_buffer:
+            return
+        table = pa.Table.from_pylist(history_buffer, schema=COUNTER_EVENT_SCHEMA)
+        history_writer.write_table(table)
+        history_rows += table.num_rows
+        history_buffer.clear()
+
+    try:
+        for raw in rows:
+            timestamp = int(raw["show_time"])
+            week = week_start(timestamp)
+            if week not in selected:
+                continue
+            if history_writer is not None:
+                history_buffer.append(
+                    {
+                        "show_time": timestamp,
+                        "banner_id": int(raw["banner_id"]),
+                        "group_id": None,
+                        "domain": "",
+                        "query_key": stable_text_key(raw.get("query")),
+                        "region_key": scalar_key(raw.get("region_id")),
+                        "user_key": scalar_key(raw.get("crypta_id_v2")),
+                        "source_cost": float(raw.get("source_cost") or 0.0),
+                    }
+                )
+                if len(history_buffer) >= 100_000:
+                    flush_history()
+            request_id = _request_key(raw)
+            bucket = selected[week]
+            if request_id in bucket:
+                banner_id = int(raw["banner_id"])
+                if banner_id not in bucket[request_id]["clicked_banner_ids"]:
+                    bucket[request_id]["clicked_banner_ids"].append(banner_id)
+                    bucket[request_id]["clicked_source_costs"].append(
+                        float(raw.get("source_cost") or 0.0)
+                    )
+                continue
+            priority = int(request_id[-16:], 16)
+            if len(bucket) >= requests_per_week and priority >= -heaps[week][0][0]:
+                continue
+            if len(bucket) >= requests_per_week:
+                _, removed = heapq.heappop(heaps[week])
+                bucket.pop(removed, None)
+            hit_log_id = int.from_bytes(
+                hashlib.sha1(request_id.encode("utf-8")).digest()[:8], "little"
+            )
+            bucket[request_id] = {
+                "request_id": request_id,
+                "hit_log_id": hit_log_id,
+                "show_time": timestamp,
+                "query": str(raw.get("query") or ""),
+                "region_id": raw.get("region_id"),
+                "crypta_id_v2": raw.get("crypta_id_v2"),
+                "device": raw.get("device"),
+                "age": raw.get("age"),
+                "gender": raw.get("gender"),
+                "clicked_banner_ids": [int(raw["banner_id"])],
+                "clicked_source_costs": [float(raw.get("source_cost") or 0.0)],
+            }
+            heapq.heappush(heaps[week], (-priority, request_id))
+        flush_history()
+    finally:
+        if history_writer is not None:
+            history_writer.close()
+    if history_output is not None and history_temporary is not None:
+        os.replace(history_temporary, history_output)
     materialized = sorted(
         (row for bucket in selected.values() for row in bucket.values()),
         key=lambda row: (int(row["show_time"]), str(row["request_id"])),
@@ -352,4 +402,6 @@ def extract_oof_requests(
             for week in weeks
         },
         "output": str(output),
+        "history_output": str(history_output) if history_output else None,
+        "history_rows": history_rows,
     }

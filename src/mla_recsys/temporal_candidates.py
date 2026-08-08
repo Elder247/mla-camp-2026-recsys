@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -7,9 +8,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from omegaconf import DictConfig
+import pyarrow.parquet as pq
 
 from .artifacts import fingerprint_file
 from .candidate_cache import CandidatePartitionSink, candidate_row
+from .counters import scalar_key, stable_text_key
 from .data import read_request_parquet, stable_partition
 
 
@@ -18,6 +21,8 @@ TEMPORAL_SOURCES = {
     "history_user_v1": "user",
     "region_pop_sc_v1": "region",
     "global_pop_sc_v1": "global",
+    "history_query_sc_oof_v1": "query_sc",
+    "history_query_region_oof_v1": "query_region_sc",
 }
 
 
@@ -39,12 +44,18 @@ class TemporalHistoryState:
         self.stats: dict[str, dict[int, BannerStats]] = defaultdict(dict)
 
     def _key(self, request: dict[str, Any]) -> str | None:
+        query = str(request.get("query_key") or stable_text_key(request.get("query")))
+        region = str(request.get("region_key") or scalar_key(request.get("region_id")))
+        if self.family == "query_sc":
+            return query or None
+        if self.family == "query_region_sc":
+            return f"{query}|{region}" if query and region else None
         if self.family == "user":
-            value = request.get("crypta_id_v2")
-            return str(int(value)) if value not in (None, 0) else None
+            value = request.get("user_key") or request.get("crypta_id_v2")
+            return str(value) if value not in (None, 0, "", "0") else None
         if self.family == "region":
-            value = request.get("region_id")
-            return str(int(value)) if value is not None else None
+            value = request.get("region_key") or request.get("region_id")
+            return str(value) if value not in (None, "") else None
         return "global"
 
     def observe(self, request: dict[str, Any]) -> None:
@@ -53,10 +64,14 @@ class TemporalHistoryState:
             return
         show_time = int(request.get("show_time") or 0)
         by_banner = self.stats[key]
-        for banner_id, source_cost in zip(
-            request.get("clicked_banner_ids") or (),
-            request.get("clicked_source_costs") or (),
-        ):
+        if request.get("banner_id") is not None:
+            values = [(request["banner_id"], request.get("source_cost") or 0.0)]
+        else:
+            values = zip(
+                request.get("clicked_banner_ids") or (),
+                request.get("clicked_source_costs") or (),
+            )
+        for banner_id, source_cost in values:
             item = by_banner.setdefault(int(banner_id), BannerStats())
             item.clicks += 1
             item.source_cost_sum += float(source_cost or 0.0)
@@ -70,7 +85,7 @@ class TemporalHistoryState:
         for banner_id, item in self.stats.get(key, {}).items():
             if item.clicks < self.min_clicks:
                 continue
-            if self.family == "user":
+            if self.family in {"user", "query_sc", "query_region_sc"}:
                 score = item.source_cost_sum
             else:
                 support = item.clicks / (item.clicks + self.bayes_prior)
@@ -109,6 +124,9 @@ def temporal_source_inputs(
     warm_split = reference_split(split)
     if warm_split:
         inputs.append(fingerprint_file(run_path / "data" / f"{warm_split}_requests.parquet"))
+    external = _external_events_path(cfg, source)
+    if external is not None:
+        inputs.append(fingerprint_file(external))
     inputs.append(fingerprint_file(Path(__file__)))
     return inputs
 
@@ -132,6 +150,28 @@ def _warm_state(
         state.observe(request)
 
 
+def _external_events_path(cfg: DictConfig, source: str) -> Path | None:
+    item = cfg.candidates.generators[source]
+    key = item.get("external_events_path_key")
+    return Path(str(cfg.paths[str(key)])) if key else None
+
+
+def _external_event_rows(path: Path) -> Iterable[dict[str, Any]]:
+    parquet = pq.ParquetFile(path)
+    columns = [
+        "show_time",
+        "banner_id",
+        "query_key",
+        "region_key",
+        "user_key",
+        "source_cost",
+    ]
+    for batch in parquet.iter_batches(batch_size=100_000, columns=columns):
+        values = batch.to_pydict()
+        for index in range(batch.num_rows):
+            yield {name: values[name][index] for name in columns}
+
+
 def temporal_rankings(
     *,
     cfg: DictConfig,
@@ -142,32 +182,48 @@ def temporal_rankings(
 ) -> dict[str, list[dict[str, Any]]]:
     state = _new_state(cfg, source)
     warm_split = reference_split(split)
+    external_path = _external_events_path(cfg, source)
+    auxiliary: Iterable[dict[str, Any]] = ()
+    if external_path is not None:
+        auxiliary = _external_event_rows(external_path)
     if warm_split:
-        _warm_state(
-            state,
+        warm = sorted(
             read_request_parquet(run_path / "data" / f"{warm_split}_requests.parquet"),
+            key=lambda row: (int(row.get("show_time") or 0), str(row["request_id"])),
+        )
+        if external_path is not None:
+            warm = [row for row in warm if not str(row["request_id"]).startswith("oof:")]
+        auxiliary = heapq.merge(
+            auxiliary,
+            warm,
+            key=lambda row: (int(row.get("show_time") or 0), str(row.get("request_id") or "")),
         )
     ordered = sorted(
         requests, key=lambda row: (int(row.get("show_time") or 0), str(row["request_id"]))
     )
     top_k = int(cfg.candidates.generators[source].top_k)
     result: dict[str, list[dict[str, Any]]] = {}
-    if warm_split:
-        for request in ordered:
-            result[str(request["request_id"])] = state.rank(request, top_k=top_k)
-        return result
-
+    auxiliary_iterator = iter(auxiliary)
+    current_auxiliary = next(auxiliary_iterator, None)
     position = 0
     while position < len(ordered):
         timestamp = int(ordered[position].get("show_time") or 0)
+        while (
+            current_auxiliary is not None
+            and int(current_auxiliary.get("show_time") or 0) < timestamp
+        ):
+            state.observe(current_auxiliary)
+            current_auxiliary = next(auxiliary_iterator, None)
         end = position + 1
         while end < len(ordered) and int(ordered[end].get("show_time") or 0) == timestamp:
             end += 1
         batch = ordered[position:end]
         for request in batch:
             result[str(request["request_id"])] = state.rank(request, top_k=top_k)
-        for request in batch:
-            state.observe(request)
+        if not warm_split:
+            for request in batch:
+                if external_path is None or not str(request["request_id"]).startswith("oof:"):
+                    state.observe(request)
         position = end
     return result
 

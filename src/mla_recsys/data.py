@@ -154,6 +154,7 @@ def read_request_parquet(path: Path) -> list[dict[str, Any]]:
 def request_example(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "request_id": row["request_id"],
+        "show_time": row.get("show_time"),
         "query": row["query"],
         "context": {
             "region_id": row.get("region_id"),
@@ -163,4 +164,3 @@ def request_example(row: dict[str, Any]) -> dict[str, Any]:
             "gender": row.get("gender"),
         },
     }
-

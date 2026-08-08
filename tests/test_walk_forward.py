@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mla_recsys.counters import week_start  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
+import pyarrow.parquet as pq
 from two_tower_v2.walk_forward import (  # noqa: E402
     extract_oof_requests,
     validate_week_sequence,
@@ -62,14 +63,20 @@ class WalkForwardTest(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "oof.parquet"
+            history_output = Path(directory) / "history.parquet"
             report = extract_oof_requests(
                 rows=rows,
                 weeks=[first],
                 requests_per_week=2,
                 output=output,
+                history_output=history_output,
             )
             materialized = read_request_parquet(output)
+            history = pq.read_table(history_output)
         self.assertEqual(report["requests"], 2)
+        self.assertEqual(report["history_rows"], 3)
+        self.assertEqual(history.num_rows, 3)
+        self.assertEqual(history["show_time"].to_pylist(), [first + 10, first + 10, first + 20])
         coffee = next(row for row in materialized if row["query"] == "coffee")
         self.assertEqual(coffee["clicked_banner_ids"], [10, 11])
         self.assertEqual(coffee["clicked_source_costs"], [100.0, 200.0])

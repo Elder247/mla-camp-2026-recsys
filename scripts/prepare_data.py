@@ -15,6 +15,7 @@ from mla_recsys.data import (
     REQUEST_SCHEMA,
     load_test_requests,
     load_validation_requests,
+    read_request_parquet,
     temporal_split,
     write_request_parquet,
 )
@@ -31,23 +32,58 @@ def main() -> int:
     if len(holdout) != int(cfg.split.observed.holdout_request_groups):
         raise RuntimeError(f"Unexpected holdout request count: {len(holdout)}")
 
+    oof_path = None
+    oof: list[dict] = []
+    walk_forward = cfg.get("walk_forward_ranker", {})
+    if bool(walk_forward.get("enabled", False)):
+        path_key = str(walk_forward.oof_requests_path_key)
+        oof_path = Path(str(cfg.paths[path_key]))
+        if not oof_path.is_file():
+            raise FileNotFoundError(f"Walk-forward OOF requests are missing: {oof_path}")
+        oof = read_request_parquet(oof_path)
+        if not oof:
+            raise RuntimeError("Walk-forward OOF requests are empty")
+        oof_ids = {str(row["request_id"]) for row in oof}
+        validation_ids = {str(row["request_id"]) for row in rows}
+        if len(oof_ids) != len(oof):
+            raise RuntimeError("Walk-forward OOF request ids are not unique")
+        if oof_ids & validation_ids:
+            raise RuntimeError("Walk-forward OOF and validation request ids overlap")
+        if max(int(row["show_time"]) for row in oof) >= min(
+            int(row["show_time"]) for row in rows
+        ):
+            raise RuntimeError("Walk-forward OOF rows are not strictly before validation")
+        train = sorted(
+            [*oof, *train],
+            key=lambda row: (int(row["show_time"]), str(row["request_id"])),
+        )
+
     mode = str(cfg.runtime.mode)
     datasets = {"train": train, "holdout": holdout}
     if mode == "smoke":
         limit = int(cfg.data.smoke_requests_per_split)
         datasets = {name: values[:limit] for name, values in datasets.items()}
     if str(cfg.runtime.scope) == "full":
-        datasets["full_train"] = train + holdout
+        datasets["full_train"] = sorted(
+            [*train, *holdout],
+            key=lambda row: (int(row["show_time"]), str(row["request_id"])),
+        )
         datasets["test"] = load_test_requests(Path(str(cfg.paths.test_clicks)))
 
     output_dir = run_data_dir(context)
-    report = {"split_version": str(cfg.split.version), "datasets": {}}
+    report = {
+        "split_version": str(cfg.split.version),
+        "walk_forward_oof_rows": len(oof),
+        "datasets": {},
+    }
     for name, values in datasets.items():
         path = output_dir / f"{name}_requests.parquet"
         table = write_request_parquet(path, values)
         inputs = [
             fingerprint_file(Path(str(cfg.paths.test_clicks if name == "test" else cfg.paths.val_clicks)))
         ]
+        if oof_path is not None and name in {"train", "full_train"}:
+            inputs.append(fingerprint_file(oof_path))
         manifest = write_output_manifest(
             path,
             stage="prepare_data",

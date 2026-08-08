@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 import re
+import resource
 import sys
+import time
 from pathlib import Path
 
 from omegaconf import OmegaConf
@@ -66,6 +68,7 @@ def main() -> int:
 
     source = str(cfg.paths.raw_train_table)
     target = str(cfg.paths.weekly_train_table)
+    started = time.perf_counter()
     if not YT_PATH_PATTERN.fullmatch(source) or not YT_PATH_PATTERN.fullmatch(target):
         raise ValueError("Unsafe YT input/output path")
     client = make_client()
@@ -157,6 +160,9 @@ def main() -> int:
         "sorted_by": sorted_by,
         "schema": schema,
         "operation_id": operation_id,
+        "wall_seconds": time.perf_counter() - started,
+        "peak_rss_bytes": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        * 1024,
         "query_sha256": hashlib.sha256(query.encode("utf-8")).hexdigest(),
     }
     atomic_json(report_path, report)

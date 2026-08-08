@@ -1,0 +1,19 @@
+extends: v2_walk_forward_full.yaml
+
+experiment:
+  name: two_tower_v2_walk_forward_10m
+
+paths:
+  raw_train_table: //home/bm/users/argus/mla/data/train_10m
+  weekly_train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_10m_v1
+  week_stats_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m/week_stats.parquet
+  oof_requests_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m/oof_requests.parquet
+  history_events_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m/history_events.parquet
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_10m
+
+tracking:
+  underdeep:
+    run_name: two-tower-v2-walk-forward-10m
+
+walk_forward:
+  requests_per_week: 750

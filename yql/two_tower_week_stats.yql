@@ -3,7 +3,7 @@ USE kolmogorov;
 PRAGMA yt.Pool = "ads-research";
 PRAGMA yt.UseNativeYtTypes;
 
-$input = "//home/bm/users/argus/mla/data/train_100m";
+$input = "__INPUT_TABLE__";
 $week_start = ($ts) -> {
     RETURN (($ts - 345600ul) / 604800ul) * 604800ul + 345600ul;
 };
