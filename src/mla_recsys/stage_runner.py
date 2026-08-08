@@ -29,6 +29,32 @@ def _linux_process_rss(pid: int) -> int:
     return max(values, default=0)
 
 
+def _linux_process_tree_rss(pid: int) -> int:
+    """Sample current RSS for a stage and all living descendants."""
+
+    total = 0
+    seen: set[int] = set()
+    pending = [int(pid)]
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        status = Path(f"/proc/{current}/status")
+        if status.is_file():
+            text = status.read_text(encoding="utf-8", errors="replace")
+            match = re.search(r"^VmRSS:\s*(\d+)\s+kB$", text, flags=re.MULTILINE)
+            if match:
+                total += int(match.group(1)) * 1024
+        children = Path(f"/proc/{current}/task/{current}/children")
+        if children.is_file():
+            try:
+                pending.extend(int(value) for value in children.read_text().split())
+            except (FileNotFoundError, ProcessLookupError, ValueError):
+                pass
+    return total
+
+
 class StageRunner:
     """Run one heavy stage as a child process and persist its atomic status."""
 
@@ -71,11 +97,13 @@ class StageRunner:
 
             def sample_memory() -> None:
                 while not stop_sampling.wait(0.1):
-                    sampled_peak[0] = max(sampled_peak[0], _linux_process_rss(process.pid))
+                    sampled_peak[0] = max(
+                        sampled_peak[0], _linux_process_tree_rss(process.pid)
+                    )
 
             sampler = None
             if sys.platform.startswith("linux") and not use_gnu_time:
-                sampled_peak[0] = _linux_process_rss(process.pid)
+                sampled_peak[0] = _linux_process_tree_rss(process.pid)
                 sampler = threading.Thread(target=sample_memory, daemon=True)
                 sampler.start()
             assert process.stdout is not None
@@ -97,7 +125,9 @@ class StageRunner:
                 sampler.join(timeout=1.0)
         after = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
         peak_rss_bytes = sampled_peak[0] or _rss_bytes(max(before, after))
-        peak_rss_measurement = "linux_proc_stage" if sampled_peak[0] else "children_upper_bound"
+        peak_rss_measurement = (
+            "linux_proc_tree_stage" if sampled_peak[0] else "children_upper_bound"
+        )
         if time_path.is_file():
             rendered_time = time_path.read_text(encoding="utf-8", errors="replace")
             match = re.search(r"Maximum resident set size \(kbytes\):\s*(\d+)", rendered_time)

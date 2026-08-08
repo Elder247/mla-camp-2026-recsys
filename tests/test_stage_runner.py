@@ -42,7 +42,11 @@ class StageRunnerTest(unittest.TestCase):
             self.assertGreater(saved["peak_rss_bytes"], 0)
             self.assertIn(
                 saved["peak_rss_measurement"],
-                {"linux_proc_stage", "gnu_time_stage", "children_upper_bound"},
+                {
+                    "linux_proc_tree_stage",
+                    "gnu_time_stage",
+                    "children_upper_bound",
+                },
             )
             self.assertTrue((store.path / "reports" / "timing.csv").is_file())
 

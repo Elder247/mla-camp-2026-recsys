@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -180,6 +181,20 @@ def main() -> int:
             _build_one_feature_partition(partition, config_sha, force)
             for partition in range(partitions)
         ]
+    elif sys.platform.startswith("linux"):
+        # CounterLookup and BannerIndex are large immutable structures. Build
+        # them once and fork after initialization so Linux shares their pages
+        # copy-on-write instead of parsing the same parquet in every worker.
+        _initialize_feature_worker(*initargs)
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=multiprocessing.get_context("fork"),
+        ) as executor:
+            futures = [
+                executor.submit(_build_one_feature_partition, partition, config_sha, force)
+                for partition in range(partitions)
+            ]
+            results = [future.result() for future in futures]
     else:
         with ProcessPoolExecutor(
             max_workers=workers,

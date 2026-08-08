@@ -241,8 +241,19 @@ def main() -> int:
         else artifact_dir / "final"
     )
     final_lifecycle = {
-        "predict_state": f"after_week_{len(weeks) - 1}",
-        "trained_through_week_index": len(weeks) - 1,
+        "predict_state": (
+            "configured_full_quality_override"
+            if final_path_key
+            else f"after_week_{len(weeks) - 1}"
+        ),
+        "trained_through_week_index": (
+            None if final_path_key else len(weeks) - 1
+        ),
+        "trained_on": (
+            "full_prevalidation_raw_train"
+            if final_path_key
+            else "selected_walk_forward_weeks"
+        ),
         "target_week_seen": False,
         "purpose": "validation_and_test",
     }
