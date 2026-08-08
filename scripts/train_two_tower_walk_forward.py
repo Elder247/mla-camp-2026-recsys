@@ -81,7 +81,7 @@ def main() -> int:
     cfg = load_config(args.config.resolve())
     sys.path.insert(0, str(cfg.paths.step2_root))
     from two_tower_v2.data import YtTableSource, YtWeekTableSource
-    from two_tower_v2.training import atomic_json, evaluate, resolve_device
+    from two_tower_v2.training import atomic_json, build_model, evaluate, resolve_device
     from two_tower_v2.walk_forward import (
         export_snapshot,
         extract_oof_requests,
@@ -234,32 +234,60 @@ def main() -> int:
             numeric_metrics(metrics, prefix="week"),
         )
 
-    final_dir = artifact_dir / "final"
+    final_path_key = cfg.walk_forward.get("final_artifact_path_key")
+    final_dir = (
+        Path(str(cfg.paths[str(final_path_key)]))
+        if final_path_key
+        else artifact_dir / "final"
+    )
     final_lifecycle = {
         "predict_state": f"after_week_{len(weeks) - 1}",
         "trained_through_week_index": len(weeks) - 1,
         "target_week_seen": False,
         "purpose": "validation_and_test",
     }
-    export_snapshot(
-        cfg=cfg,
-        model=model,
-        artifact_dir=final_dir,
-        device=device,
-        lifecycle=final_lifecycle,
-    )
+    final_model = model
+    final_model_cfg = cfg
+    if final_path_key:
+        required = (
+            final_dir / "model.pt",
+            final_dir / "candidate_embeddings.npy",
+            final_dir / "candidate_metadata.parquet",
+            final_dir / "manifest.json",
+        )
+        missing = [str(path) for path in required if not path.is_file()]
+        if missing:
+            raise FileNotFoundError(f"Configured final artifact is incomplete: {missing}")
+        checkpoint = torch.load(
+            final_dir / "model.pt", map_location=device, weights_only=True
+        )
+        final_model_cfg = OmegaConf.create(checkpoint["config"])
+        final_model = build_model(final_model_cfg).to(device)
+        final_model.load_state_dict(checkpoint["state_dict"])
+    else:
+        export_snapshot(
+            cfg=cfg,
+            model=model,
+            artifact_dir=final_dir,
+            device=device,
+            lifecycle=final_lifecycle,
+        )
     validation = YtTableSource(
         str(cfg.paths.validation_table), str(cfg.paths.proxy)
     )
     health = evaluate(
-        model,
+        final_model,
         list(validation.rows()),
-        cfg=cfg,
+        cfg=final_model_cfg,
         device=device,
     )
     manifest.update(
         status="completed",
         final_artifact=str(final_dir),
+        final_artifact_source=(
+            "configured_full_quality_override" if final_path_key else "walk_forward_state"
+        ),
+        final_lifecycle=final_lifecycle,
         validation_health=health,
     )
     atomic_json(manifest_path, manifest)
