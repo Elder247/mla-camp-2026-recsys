@@ -20,6 +20,7 @@ from two_tower_v2.data import (  # noqa: E402
 )
 from two_tower_v2.model import TwoTowerV2, embedding_dimension  # noqa: E402
 from two_tower_v2.training import (  # noqa: E402
+    batch_frequency_logq,
     positive_mask,
     retrieval_objective,
     sourcecost_example_weights,
@@ -228,6 +229,68 @@ def test_multi_positive_loss_does_not_treat_duplicate_clicks_as_negatives() -> N
     loss.backward()
 
 
+def test_positive_mask_prefers_raw_banner_id_over_hash_collision() -> None:
+    rows = [
+        {
+            "query_word_ids": [1],
+            "region_ids": [4],
+            "banner_id": 101,
+            "banner_id_ids": [8],
+        },
+        {
+            "query_word_ids": [2],
+            "region_ids": [4],
+            "banner_id": 202,
+            "banner_id_ids": [8],
+        },
+    ]
+    assert positive_mask(rows, device=torch.device("cpu")).tolist() == [
+        [True, False],
+        [False, True],
+    ]
+
+
+def test_batch_frequency_logq_counts_both_sampling_directions() -> None:
+    rows = [
+        {
+            "query_word_ids": [1],
+            "region_ids": [4],
+            "banner_id": 101,
+            "banner_id_ids": [8],
+        },
+        {
+            "query_word_ids": [1],
+            "region_ids": [4],
+            "banner_id": 202,
+            "banner_id_ids": [9],
+        },
+        {
+            "query_word_ids": [2],
+            "region_ids": [4],
+            "banner_id": 101,
+            "banner_id_ids": [8],
+        },
+    ]
+    query_logq, banner_logq = batch_frequency_logq(
+        rows, device=torch.device("cpu")
+    )
+    expected = torch.log(torch.tensor(2.0))
+    assert torch.allclose(query_logq, torch.tensor([expected, expected, 0.0]))
+    assert torch.allclose(banner_logq, torch.tensor([expected, 0.0, expected]))
+
+    logits = torch.zeros((3, 3), requires_grad=True)
+    loss, _ = retrieval_objective(
+        logits,
+        rows,
+        objective="multi_positive",
+        symmetric_weight=1.0,
+        logq_correction="batch_frequency",
+        logq_power=1.0,
+    )
+    assert torch.isfinite(loss)
+    loss.backward()
+
+
 def test_v3_config_adds_bpe_capacity_without_changing_old_config() -> None:
     old = load_config(ROOT / "configs" / "two_tower" / "v2_dcn4_mlp3_full.yaml")
     new = load_config(
@@ -252,6 +315,20 @@ def test_v4_config_aligns_loss_and_banner_feature_with_sourcecost() -> None:
     assert cfg.training.sourcecost_weight_power == 0.5
     assert cfg.training.sourcecost_weight_min == 0.25
     assert cfg.training.sourcecost_weight_max == 4.0
+
+
+def test_v8_config_enables_batch_frequency_logq_only_by_override() -> None:
+    old = load_config(
+        ROOT / "configs" / "two_tower" / "v7_large_batch_chrono_10m.yaml"
+    )
+    new = load_config(
+        ROOT / "configs" / "two_tower" / "v8_logq_chrono_10m.yaml"
+    )
+    assert old.training.get("logq_correction", "none") == "none"
+    assert new.training.logq_correction == "batch_frequency"
+    assert new.training.logq_power == 1.0
+    assert new.model == old.model
+    assert new.training.batch_size == old.training.batch_size
 
 
 def test_v6_config_adds_existing_context_and_ad_metadata() -> None:

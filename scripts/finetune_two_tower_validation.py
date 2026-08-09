@@ -303,6 +303,22 @@ def main() -> int:
                                 1.0,
                             )
                         ),
+                        logq_correction=str(
+                            finetune_training_value(
+                                cfg.finetune,
+                                model_cfg,
+                                "logq_correction",
+                                "none",
+                            )
+                        ),
+                        logq_power=float(
+                            finetune_training_value(
+                                cfg.finetune,
+                                model_cfg,
+                                "logq_power",
+                                1.0,
+                            )
+                        ),
                     )
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(

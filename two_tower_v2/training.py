@@ -126,12 +126,13 @@ def copy_tokenizer_artifact(
     return target
 
 
-def positive_mask(
+def positive_ids(
     rows: list[dict[str, Any]], *, device: torch.device
-) -> torch.Tensor:
-    """Mark repeated-banner and repeated-query clicks as genuine positives."""
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return contiguous query and banner identities for one sampled batch."""
 
     query_ids: dict[tuple[tuple[int, ...], tuple[int, ...]], int] = {}
+    banner_ids: dict[tuple[str, int], int] = {}
     query_values = []
     banner_values = []
     for index, row in enumerate(rows):
@@ -140,13 +141,54 @@ def positive_mask(
             tuple(int(value) for value in row.get("region_ids") or ()),
         )
         query_values.append(query_ids.setdefault(query_key, len(query_ids)))
+        raw_banner_id = int(row.get("banner_id") or 0)
         banner = row.get("banner_id_ids") or ()
-        banner_values.append(int(banner[0]) if banner else -(index + 1))
+        banner_key = (
+            ("raw", raw_banner_id)
+            if raw_banner_id > 0
+            else ("hashed", int(banner[0]) if banner else -(index + 1))
+        )
+        banner_values.append(
+            banner_ids.setdefault(banner_key, len(banner_ids))
+        )
     query_tensor = torch.tensor(query_values, dtype=torch.long, device=device)
     banner_tensor = torch.tensor(banner_values, dtype=torch.long, device=device)
+    return query_tensor, banner_tensor
+
+
+def positive_mask(
+    rows: list[dict[str, Any]], *, device: torch.device
+) -> torch.Tensor:
+    """Mark repeated-banner and repeated-query clicks as genuine positives."""
+
+    query_tensor, banner_tensor = positive_ids(rows, device=device)
     return (query_tensor[:, None] == query_tensor[None, :]) | (
         banner_tensor[:, None] == banner_tensor[None, :]
     )
+
+
+def batch_frequency_logq(
+    rows: list[dict[str, Any]], *, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Estimate per-sample log Q from repeated identities in the current batch.
+
+    The omitted ``-log(batch_size)`` term is constant within each softmax and
+    therefore does not change the objective. Returning query and banner terms
+    separately keeps the symmetric retrieval loss correct in both directions.
+    """
+
+    query_ids, banner_ids = positive_ids(rows, device=device)
+
+    def repeated_log_count(values: torch.Tensor) -> torch.Tensor:
+        _, inverse, counts = torch.unique(
+            values,
+            sorted=False,
+            return_inverse=True,
+            return_counts=True,
+        )
+        return counts[inverse].to(dtype=torch.float32).log()
+
+    return repeated_log_count(query_ids), repeated_log_count(banner_ids)
 
 
 def sourcecost_example_weights(
@@ -186,6 +228,8 @@ def retrieval_objective(
     sourcecost_weight_power: float = 0.0,
     sourcecost_weight_min: float = 1.0,
     sourcecost_weight_max: float = 1.0,
+    logq_correction: str = "none",
+    logq_power: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     weights = sourcecost_example_weights(
         rows,
@@ -194,10 +238,24 @@ def retrieval_objective(
         maximum=sourcecost_weight_max,
         device=logits.device,
     )
+    correction = str(logq_correction).lower()
+    if correction not in {"none", "batch_frequency"}:
+        raise ValueError(f"unknown logQ correction: {logq_correction}")
+    if logq_power < 0.0:
+        raise ValueError("logq_power must be non-negative")
+    query_logits = logits.float()
+    banner_logits = logits.T.float()
+    if correction == "batch_frequency" and logq_power > 0.0:
+        query_logq, banner_logq = batch_frequency_logq(
+            rows, device=logits.device
+        )
+        query_logits = query_logits - logq_power * banner_logq.unsqueeze(0)
+        banner_logits = banner_logits - logq_power * query_logq.unsqueeze(0)
+
     if objective == "cross_entropy":
         labels = torch.arange(len(rows), device=logits.device)
         mask = torch.eye(len(rows), dtype=torch.bool, device=logits.device)
-        losses = F.cross_entropy(logits.float(), labels, reduction="none")
+        losses = F.cross_entropy(query_logits, labels, reduction="none")
         return (losses * weights).sum() / weights.sum(), mask
     if objective != "multi_positive":
         raise ValueError(f"unknown TwoTower objective: {objective}")
@@ -217,10 +275,10 @@ def retrieval_objective(
         losses = denominator - numerator
         return (losses * row_weights).sum() / row_weights.sum()
 
-    query_loss = direction_loss(logits, mask, weights)
+    query_loss = direction_loss(query_logits, mask, weights)
     if symmetric_weight == 0:
         return query_loss, mask
-    banner_loss = direction_loss(logits.T, mask.T, weights)
+    banner_loss = direction_loss(banner_logits, mask.T, weights)
     return (
         query_loss + symmetric_weight * banner_loss
     ) / (1.0 + symmetric_weight), mask
@@ -280,6 +338,10 @@ def evaluate(
             sourcecost_weight_max=float(
                 cfg.training.get("sourcecost_weight_max", 1.0)
             ),
+            logq_correction=str(
+                cfg.training.get("logq_correction", "none")
+            ),
+            logq_power=float(cfg.training.get("logq_power", 1.0)),
         )
         total_loss += float(loss.cpu()) * len(batch)
         predicted = logits.argmax(dim=1)
@@ -398,6 +460,10 @@ def train_model(
                     sourcecost_weight_max=float(
                         cfg.training.get("sourcecost_weight_max", 1.0)
                     ),
+                    logq_correction=str(
+                        cfg.training.get("logq_correction", "none")
+                    ),
+                    logq_power=float(cfg.training.get("logq_power", 1.0)),
                 )
             loss.backward()
             gradient_norm = float(

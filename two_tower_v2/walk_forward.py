@@ -188,6 +188,10 @@ def train_week(
                 sourcecost_weight_max=float(
                     cfg.training.get("sourcecost_weight_max", 1.0)
                 ),
+                logq_correction=str(
+                    cfg.training.get("logq_correction", "none")
+                ),
+                logq_power=float(cfg.training.get("logq_power", 1.0)),
             )
         loss.backward()
         torch.nn.utils.clip_grad_norm_(

@@ -1,0 +1,15 @@
+extends: v7_large_batch_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v8_logq_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v8_logq_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v8-logq-chrono-10m
+
+training:
+  logq_correction: batch_frequency
+  logq_power: 1.0
