@@ -492,3 +492,27 @@ def test_validation_finetune_loss_falls_back_to_checkpoint_config() -> None:
         )
         == 0.25
     )
+
+
+def test_validation_finetune_preserves_string_logq_mode() -> None:
+    from omegaconf import OmegaConf
+
+    checkpoint = OmegaConf.create(
+        {"training": {"logq_correction": "batch_frequency"}}
+    )
+
+    assert (
+        finetune_training_value(
+            OmegaConf.create({}), checkpoint, "logq_correction", "none"
+        )
+        == "batch_frequency"
+    )
+    assert (
+        finetune_training_value(
+            OmegaConf.create({"logq_correction": "none"}),
+            checkpoint,
+            "logq_correction",
+            "none",
+        )
+        == "none"
+    )

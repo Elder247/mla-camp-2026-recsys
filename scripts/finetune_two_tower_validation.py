@@ -56,15 +56,13 @@ def finetune_training_value(
     finetune_cfg: Any,
     model_cfg: Any,
     name: str,
-    default: float,
-) -> float:
+    default: Any,
+) -> Any:
     """Resolve an override against the actual checkpoint training config."""
 
-    return float(
-        finetune_cfg.get(
-            name,
-            model_cfg.get("training", {}).get(name, default),
-        )
+    return finetune_cfg.get(
+        name,
+        model_cfg.get("training", {}).get(name, default),
     )
 
 
