@@ -906,5 +906,12 @@ Fast logQ context screens and bounded ensemble (2026-08-09):
 - all three 10M test candidate pools completed with 32 partitions. The selected
   output passed the strict 10,000-by-50 contract, has full SHA-256
   `1de5650002168cd35022288e5bdfb8b94e5cd47010c7017b6342925e55f7220b`,
-  and was uploaded as leaderboard entry `bc5cc60153a0`; private evaluation is
-  still running at the time of this record.
+  and was uploaded as leaderboard entry `bc5cc60153a0`. The scorer failed
+  before evaluation because the same YT proxy outage prevented it from reading
+  its truth table; the parquet itself was not rejected and will be resubmitted
+  unchanged after YT health recovers;
+- a past-only normalized-query-frequency gate was checked to keep secondary
+  towers only for tail queries. Its best early/late gains were only
+  `+0.000668/+0.000619`, below the global blend's
+  `+0.001232/+0.003292`; the conditional branch is rejected to keep inference
+  simple.
