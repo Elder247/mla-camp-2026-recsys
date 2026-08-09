@@ -514,3 +514,37 @@ Cached QueryRMSE/YetiRank ensemble full/private evidence
   the existing `10M` walk-forward artifact for the metric gate. A 100M build is
   allowed only after a non-noisy improvement in candidate complementarity,
   SC Recall@500 and final SC Recall@50.
+
+Natural-pool binary ranker probe (`20260809_0625_i2_binary_rankonly`):
+
+- the binary target is defined only from the natural candidate pool; no clicked
+  candidate is injected. The ranker-only run reused 919 validated immutable
+  files and trained a 340-tree depth-8 QueryRMSE model in `49.8s`;
+- binary CatBoost/blend SC Recall@50 is `0.617312/0.637823`. Its best bounded
+  ensemble with the accepted log-SourceCost model reaches `0.649234`, below
+  the accepted honest `0.650073`; the hypothesis is rejected without a full
+  run.
+
+Controlled TwoTower ordering gate (10M):
+
+- strict chronological training (`20260809_0635_i2_tt_chrono10m_probe`) took
+  `71.5s`, candidate export `35.9s`, and reached SC Recall@50/500
+  `0.455262/0.654963`;
+- the otherwise identical shuffled control
+  (`20260809_0640_i2_tt_shuffled10m_probe`) took `81.6s`, export `34.9s`, and
+  reached `0.434049/0.662663`. Chronology improves the important top-50 by
+  `+2.12 pp`, while shuffle retains `+0.77 pp` at 500;
+- the pair is complementary: its oracle-union SC Recall@500 is `0.683531`,
+  roughly `+2.09 pp` over the stronger individual source. Therefore neither
+  model is discarded. One strict chronological 100M model is promoted as the
+  next bounded experiment; the existing shuffled 100M artifact remains the
+  control and possible second retrieval source.
+
+Active bounded confirmation:
+
+- detached training of `two_tower_v2_dcn4_mlp3_chrono_100m` started at
+  `2026-08-09 06:44 MSK`; its detached supervisor will automatically run the
+  retrieval probe against `20260809_0500_i2_history_features_temporal` after
+  the immutable artifact is complete. The expected train/export/probe cycle is
+  about `15 minutes`; no temporal/full candidate rebuild is started before
+  this retrieval gate.
