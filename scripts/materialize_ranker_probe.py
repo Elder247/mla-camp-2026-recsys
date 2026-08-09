@@ -59,11 +59,18 @@ def validate_donor(donor: Path, cfg: object) -> dict:
     return result
 
 
-def materialize_tree(source: Path, target: Path) -> tuple[int, int]:
+def materialize_tree(
+    source: Path,
+    target: Path,
+    *,
+    excluded_directory_names: frozenset[str] = frozenset(),
+) -> tuple[int, int]:
     files = 0
     bytes_total = 0
     for path in sorted(source.rglob("*")):
         relative = path.relative_to(source)
+        if excluded_directory_names.intersection(relative.parts):
+            continue
         output = target / relative
         if path.is_dir():
             output.mkdir(parents=True, exist_ok=True)
@@ -82,21 +89,49 @@ def materialize_tree(source: Path, target: Path) -> tuple[int, int]:
     return files, bytes_total
 
 
-def materialize_ranker_probe(*, donor: Path, cfg: object) -> dict:
+def reusable_stage(stage: str, profile: str) -> bool:
+    if profile == "ranker":
+        return stage not in DOWNSTREAM_STAGES
+    if profile == "history_features":
+        return stage in {"prepare_data", "prepare_counters"} or stage.startswith(
+            "generate_"
+        )
+    raise ValueError(f"Unknown reuse profile: {profile}")
+
+
+def reusable_metric(name: str, profile: str) -> bool:
+    if profile == "ranker":
+        return name in UPSTREAM_METRIC_NAMES or name.startswith(
+            UPSTREAM_METRIC_PREFIXES
+        )
+    if profile == "history_features":
+        return name == "data.json" or name.startswith("generate_")
+    raise ValueError(f"Unknown reuse profile: {profile}")
+
+
+def materialize_ranker_probe(*, donor: Path, cfg: object, profile: str) -> dict:
     donor_result = validate_donor(donor, cfg)
     store = RunStore.initialize(cfg, repo_root=ROOT, resume=False)
     files = 0
     bytes_total = 0
-    for relative in UPSTREAM_DIRECTORIES:
-        count, size = materialize_tree(donor / relative, store.path / relative)
+    directories = (
+        UPSTREAM_DIRECTORIES
+        if profile == "ranker"
+        else ("data", "counters", "candidates")
+    )
+    for relative in directories:
+        excluded = frozenset({"merged"}) if relative == "candidates" and profile == "history_features" else frozenset()
+        count, size = materialize_tree(
+            donor / relative,
+            store.path / relative,
+            excluded_directory_names=excluded,
+        )
         files += count
         bytes_total += size
 
     donor_metrics = donor / "metrics"
     for path in sorted(donor_metrics.glob("*.json")):
-        if path.name not in UPSTREAM_METRIC_NAMES and not path.name.startswith(
-            UPSTREAM_METRIC_PREFIXES
-        ):
+        if not reusable_metric(path.name, profile):
             continue
         target = store.path / "metrics" / path.name
         try:
@@ -109,7 +144,7 @@ def materialize_ranker_probe(*, donor: Path, cfg: object) -> dict:
     reused_stages = []
     for stage_path in sorted((donor / "stages").glob("*.json")):
         stage = stage_path.stem
-        if stage in DOWNSTREAM_STAGES:
+        if not reusable_stage(stage, profile):
             continue
         previous = json.loads(stage_path.read_text(encoding="utf-8"))
         if previous.get("status") != "completed":
@@ -140,7 +175,8 @@ def materialize_ranker_probe(*, donor: Path, cfg: object) -> dict:
         "files": files,
         "logical_bytes": bytes_total,
         "materialization": "hardlink_with_copy_fallback",
-        "directories": list(UPSTREAM_DIRECTORIES),
+        "profile": profile,
+        "directories": list(directories),
         "reused_stages": reused_stages,
     }
     atomic_write_json(store.path / "metrics" / "ranker_probe_reuse.json", report)
@@ -153,6 +189,11 @@ def main() -> int:
         description="Materialize a validated ranker-only run from a completed donor"
     )
     parser.add_argument("--donor", required=True, type=Path)
+    parser.add_argument(
+        "--profile",
+        choices=("ranker", "history_features"),
+        default="ranker",
+    )
     parser.add_argument("overrides", nargs="*")
     args = parser.parse_args()
     runtime, overrides = parse_cli_dotlist(args.overrides)
@@ -168,7 +209,9 @@ def main() -> int:
         scope=scope,
         overrides=overrides,
     )
-    materialize_ranker_probe(donor=args.donor.resolve(), cfg=cfg)
+    materialize_ranker_probe(
+        donor=args.donor.resolve(), cfg=cfg, profile=args.profile
+    )
     return 0
 
 

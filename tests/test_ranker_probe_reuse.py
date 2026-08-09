@@ -9,6 +9,8 @@ from omegaconf import OmegaConf
 from scripts.materialize_ranker_probe import (
     materialize_tree,
     ranker_probe_semantics,
+    reusable_metric,
+    reusable_stage,
     validate_donor,
 )
 
@@ -52,6 +54,33 @@ def test_materialize_tree_preserves_files_without_overwrite(tmp_path: Path) -> N
     assert (target / "part.parquet").read_bytes() == b"immutable"
     with pytest.raises(FileExistsError):
         materialize_tree(source, target)
+
+
+def test_history_feature_profile_excludes_merged_candidates(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    (source / "train" / "history").mkdir(parents=True)
+    (source / "train" / "merged").mkdir(parents=True)
+    (source / "train" / "history" / "part.parquet").write_bytes(b"source")
+    (source / "train" / "merged" / "part.parquet").write_bytes(b"merged")
+
+    files, _ = materialize_tree(
+        source, target, excluded_directory_names=frozenset({"merged"})
+    )
+
+    assert files == 1
+    assert (target / "train" / "history" / "part.parquet").is_file()
+    assert not (target / "train" / "merged").exists()
+
+
+def test_history_feature_profile_reuses_only_true_upstream_contracts() -> None:
+    assert reusable_stage("prepare_data", "history_features")
+    assert reusable_stage("generate_test_tfidf_v1", "history_features")
+    assert not reusable_stage("merge_candidates_test", "history_features")
+    assert not reusable_stage("build_features_test", "history_features")
+    assert reusable_metric("data.json", "history_features")
+    assert reusable_metric("generate_test_tfidf_v1.json", "history_features")
+    assert not reusable_metric("merge_test.json", "history_features")
 
 
 def test_validate_donor_requires_successful_parity(tmp_path: Path) -> None:
