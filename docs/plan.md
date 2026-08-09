@@ -663,9 +663,19 @@ TwoTower v3 BPE/multi-positive gate and validation fit (2026-08-09):
   Recall@10 `0.2805`). It is rejected as a standalone solution: validation fit
   remains useful only as an additional complementary pool;
 - the 100M v3 YT table contains 21,813,184 chronological clicked pairs and was
-  prepared in `990.9s` with 548 MB peak RSS. Detached full-data v3 training is
-  active; promotion to CatBoost is conditional on honest retrieval and
-  complementarity, not validation accuracy.
+  prepared in `990.9s` with 548 MB peak RSS. Full v3 training processed all
+  pairs in `1621.5s` at 13.45k rows/s, used 1.08 GB peak GPU memory and 2.39 GB
+  peak RSS; the one-million-banner 96D export took `62.6s`;
+- the honest 100M probe generated holdout candidates in `76.6s`. v3 improved
+  chronological v2 SC Recall@50 from `0.538797` to `0.556319`, Recall@50 from
+  `0.476150` to `0.493288`, and SC Recall@500 from `0.697190` to `0.716480`.
+  Their oracle-union SC Recall@500 is `0.719602`, mean top-50 Jaccard is
+  `0.319`, and v3-only hits contribute `0.999%` of total SourceCost;
+- all retrieval gates passed. A versioned v3 predict-before-update OOF cycle is
+  running on eight weeks. It reuses the accepted deterministic OOF request
+  sample and 739 MB past-only history by hardlink, while training fresh BPE v3
+  weekly snapshots with 10% gradient sampling. The failed pre-`r1` orchestration
+  artifact is retained for audit; no YT merge or user artifact was overwritten.
 
 The cached SC-selected CatBoost variant was also checked privately. Despite
 honest temporal SC Recall@50 `0.655090`, its cross-pool submission scored
