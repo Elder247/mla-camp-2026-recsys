@@ -22,6 +22,7 @@ from two_tower_v2.data import (  # noqa: E402
 )
 from two_tower_v2.model import TwoTowerV2, embedding_dimension  # noqa: E402
 from two_tower_v2.training import (  # noqa: E402
+    GlobalBannerFrequencyPrior,
     batch_frequency_logq,
     positive_mask,
     retrieval_objective,
@@ -365,6 +366,50 @@ def test_batch_frequency_logq_counts_both_sampling_directions() -> None:
     loss.backward()
 
 
+def test_global_banner_logq_uses_exact_counts_and_safe_unseen_fallback() -> None:
+    rows = [
+        {"query_word_ids": [1], "banner_id": 101, "banner_id_ids": [8]},
+        {"query_word_ids": [2], "banner_id": 202, "banner_id_ids": [9]},
+        {"query_word_ids": [3], "banner_id": 303, "banner_id_ids": [10]},
+    ]
+    prior = GlobalBannerFrequencyPrior(
+        counts={101: 100, 202: 4},
+        manifest={"version": 1},
+        prior_file=Path("prior.parquet"),
+        unseen_count=2.0,
+    )
+    assert torch.allclose(
+        prior.log_counts(rows, device=torch.device("cpu")),
+        torch.tensor([math.log(100.0), math.log(4.0), math.log(2.0)]),
+    )
+    assert prior.metrics()["coverage"] == pytest.approx(2.0 / 3.0)
+
+    logits = torch.zeros((3, 3), requires_grad=True)
+    loss, _ = retrieval_objective(
+        logits,
+        rows,
+        objective="multi_positive",
+        symmetric_weight=1.0,
+        logq_correction="global_banner_frequency",
+        logq_query_correction="batch_frequency",
+        logq_power=0.5,
+        global_banner_prior=prior,
+    )
+    assert torch.isfinite(loss)
+    loss.backward()
+
+
+def test_global_banner_logq_requires_a_validated_prior() -> None:
+    with pytest.raises(ValueError, match="validated prior"):
+        retrieval_objective(
+            torch.zeros((1, 1)),
+            [{"query_word_ids": [1], "banner_id": 1}],
+            objective="multi_positive",
+            symmetric_weight=0.0,
+            logq_correction="global_banner_frequency",
+        )
+
+
 def test_v3_config_adds_bpe_capacity_without_changing_old_config() -> None:
     old = load_config(ROOT / "configs" / "two_tower" / "v2_dcn4_mlp3_full.yaml")
     new = load_config(
@@ -642,6 +687,26 @@ def test_v16_adds_multihash_and_piecewise_inputs_without_changing_objective() ->
     assert full.paths.train_table.endswith("train_clicks_100m_metadata_v1")
     assert full.model.query_cardinalities == trial.model.query_cardinalities
     assert full.model.banner_cardinalities == trial.model.banner_cardinalities
+
+
+def test_v17_changes_only_logq_to_exact_train_scope_prior() -> None:
+    baseline = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v16_multihash_piecewise_logq_half_chrono_10m.yaml"
+    )
+    trial = load_config(
+        ROOT / "configs" / "two_tower" / "v17_global_logq_chrono_10m.yaml"
+    )
+    assert trial.training.logq_correction == "global_banner_frequency"
+    assert trial.training.logq_query_correction == "batch_frequency"
+    assert trial.training.logq_power == baseline.training.logq_power == 0.5
+    assert trial.paths.train_table == baseline.paths.train_table
+    assert trial.model == baseline.model
+    assert trial.paths.logq_prior_dir.endswith(
+        "logq_prior_banner_frequency_10m_v1"
+    )
 
 
 def test_v7_uses_more_in_batch_negatives() -> None:

@@ -87,6 +87,7 @@ def main() -> int:
         export_candidates,
         git_sha,
         load_bpe_tokenizer,
+        load_global_banner_prior,
         numeric_feature_scale,
         resolve_device,
         retrieval_objective,
@@ -122,6 +123,10 @@ def main() -> int:
         shutil.copy2(tokenizer_source, artifact_dir / TOKENIZER_FILENAME)
         model_cfg.paths.tokenizer_file = str(artifact_dir / TOKENIZER_FILENAME)
     tokenizer = load_bpe_tokenizer(model_cfg, artifact_dir=artifact_dir)
+    global_banner_prior = load_global_banner_prior(
+        model_cfg,
+        expected_table=str(model_cfg.paths.train_table),
+    )
     cardinalities = all_cardinalities(model_cfg)
     limits = bpe_limits(model_cfg)
 
@@ -254,12 +259,18 @@ def main() -> int:
                     tokenizer=tokenizer,
                     bpe_limits=limits,
                     source_cost_log1p_scale=float(
-                        cfg.get("numeric_features", {}).get(
+                        model_cfg.get("numeric_features", {}).get(
                             "source_cost_log1p_scale", 1.0
                         )
                     ),
                     product_price_log1p_scale=numeric_feature_scale(
                         model_cfg, "product_price_log1p_scale"
+                    ),
+                    source_cost_piecewise_log1p_scale=numeric_feature_scale(
+                        model_cfg, "source_cost_piecewise_log1p_scale"
+                    ),
+                    product_price_piecewise_log1p_scale=numeric_feature_scale(
+                        model_cfg, "product_price_piecewise_log1p_scale"
                     ),
                 )
                 bags = pack_bags(batch, cardinalities=cardinalities, device=device)
@@ -315,6 +326,15 @@ def main() -> int:
                                 model_cfg,
                                 "logq_power",
                                 1.0,
+                            )
+                        ),
+                        global_banner_prior=global_banner_prior,
+                        logq_query_correction=str(
+                            finetune_training_value(
+                                cfg.finetune,
+                                model_cfg,
+                                "logq_query_correction",
+                                "batch_frequency",
                             )
                         ),
                     )

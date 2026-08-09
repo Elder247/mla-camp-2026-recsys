@@ -1,0 +1,15 @@
+experiment:
+  name: two_tower_logq_prior_banner_frequency_10m_v1
+
+paths:
+  step2_root: /home/astrofimuk/workspace/step2_ce
+  proxy: hahn
+  train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_10m_metadata_v1
+  prior_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/logq_prior_banner_frequency_10m_v1
+
+build:
+  scope: offline_train_10m
+  output_name: banner_frequency.parquet
+  compression: zstd
+  row_group_size: 262144
+  progress_every_rows: 500000

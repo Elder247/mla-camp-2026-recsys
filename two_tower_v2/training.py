@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import random
@@ -9,6 +10,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,124 @@ MODEL_FILENAME = "model.pt"
 EMBEDDINGS_FILENAME = "candidate_embeddings.npy"
 METADATA_FILENAME = "candidate_metadata.parquet"
 TOKENIZER_FILENAME = "tokenizer.json"
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+@dataclass
+class GlobalBannerFrequencyPrior:
+    """Exact item sampling counts from the permitted TwoTower train scope."""
+
+    counts: dict[int, int]
+    manifest: dict[str, Any]
+    prior_file: Path
+    unseen_count: float = 1.0
+    lookups: int = 0
+    misses: int = 0
+
+    def __post_init__(self) -> None:
+        if self.unseen_count <= 0.0:
+            raise ValueError("logq_unseen_count must be positive")
+
+    def log_counts(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        device: torch.device,
+    ) -> torch.Tensor:
+        values = []
+        misses = 0
+        for row in rows:
+            banner_id = int(row.get("banner_id") or 0)
+            count = self.counts.get(banner_id)
+            if count is None:
+                count = self.unseen_count
+                misses += 1
+            values.append(float(count))
+        self.lookups += len(rows)
+        self.misses += misses
+        return torch.tensor(values, dtype=torch.float32, device=device).log()
+
+    def metrics(self) -> dict[str, Any]:
+        return {
+            "mode": "global_banner_frequency",
+            "prior_file": str(self.prior_file),
+            "unique_items": int(len(self.counts)),
+            "total_count": int(sum(self.counts.values())),
+            "unseen_count": float(self.unseen_count),
+            "lookups": int(self.lookups),
+            "misses": int(self.misses),
+            "coverage": 1.0 - self.misses / max(self.lookups, 1),
+        }
+
+
+def load_global_banner_prior(
+    cfg: DictConfig | Mapping[str, Any],
+    *,
+    expected_table: str | None = None,
+    expected_rows: int | None = None,
+) -> GlobalBannerFrequencyPrior | None:
+    """Load and validate a versioned exact banner-frequency prior artifact."""
+
+    correction = str(cfg.get("training", {}).get("logq_correction", "none"))
+    if correction.lower() != "global_banner_frequency":
+        return None
+    configured = cfg.get("paths", {}).get("logq_prior_dir")
+    if not configured:
+        raise ValueError(
+            "global_banner_frequency requires paths.logq_prior_dir"
+        )
+    prior_dir = Path(str(configured))
+    manifest_path = prior_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"logQ prior manifest is missing: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if int(manifest.get("version", 0)) != 1:
+        raise ValueError("unsupported logQ prior manifest version")
+    if manifest.get("kind") != "global_banner_frequency":
+        raise ValueError("unexpected logQ prior kind")
+    source = manifest.get("source", {})
+    if expected_table is not None and str(source.get("table")) != str(expected_table):
+        raise ValueError(
+            "logQ prior source does not match the configured training table"
+        )
+    if expected_rows is not None and int(source.get("row_count", -1)) != int(
+        expected_rows
+    ):
+        raise ValueError("logQ prior row count does not match the training table")
+    file_contract = manifest.get("file", {})
+    prior_file = prior_dir / str(file_contract.get("name", ""))
+    if not prior_file.is_file():
+        raise FileNotFoundError(f"logQ prior data is missing: {prior_file}")
+    expected_sha = str(file_contract.get("sha256", ""))
+    if not expected_sha or file_sha256(prior_file) != expected_sha:
+        raise ValueError("logQ prior SHA-256 mismatch")
+
+    import pyarrow.parquet as pq
+
+    columns = pq.read_table(prior_file, columns=["banner_id", "count"]).to_pydict()
+    counts = {
+        int(banner_id): int(count)
+        for banner_id, count in zip(columns["banner_id"], columns["count"])
+    }
+    if any(banner_id <= 0 or count <= 0 for banner_id, count in counts.items()):
+        raise ValueError("logQ prior contains non-positive ids or counts")
+    if len(counts) != int(manifest.get("unique_items", -1)):
+        raise ValueError("logQ prior unique item count mismatch")
+    if sum(counts.values()) != int(manifest.get("total_count", -1)):
+        raise ValueError("logQ prior total count mismatch")
+    return GlobalBannerFrequencyPrior(
+        counts=counts,
+        manifest=manifest,
+        prior_file=prior_file,
+        unseen_count=float(cfg.get("training", {}).get("logq_unseen_count", 1.0)),
+    )
 
 
 def atomic_json(path: Path, value: Mapping[str, Any]) -> None:
@@ -235,6 +355,8 @@ def retrieval_objective(
     sourcecost_weight_max: float = 1.0,
     logq_correction: str = "none",
     logq_power: float = 1.0,
+    global_banner_prior: GlobalBannerFrequencyPrior | None = None,
+    logq_query_correction: str = "batch_frequency",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     weights = sourcecost_example_weights(
         rows,
@@ -244,7 +366,11 @@ def retrieval_objective(
         device=logits.device,
     )
     correction = str(logq_correction).lower()
-    if correction not in {"none", "batch_frequency"}:
+    if correction not in {
+        "none",
+        "batch_frequency",
+        "global_banner_frequency",
+    }:
         raise ValueError(f"unknown logQ correction: {logq_correction}")
     if logq_power < 0.0:
         raise ValueError("logq_power must be non-negative")
@@ -256,6 +382,21 @@ def retrieval_objective(
         )
         query_logits = query_logits - logq_power * banner_logq.unsqueeze(0)
         banner_logits = banner_logits - logq_power * query_logq.unsqueeze(0)
+    elif correction == "global_banner_frequency" and logq_power > 0.0:
+        if global_banner_prior is None:
+            raise ValueError(
+                "global_banner_frequency requires a validated prior artifact"
+            )
+        banner_logq = global_banner_prior.log_counts(rows, device=logits.device)
+        query_logits = query_logits - logq_power * banner_logq.unsqueeze(0)
+        query_correction = str(logq_query_correction).lower()
+        if query_correction not in {"none", "batch_frequency"}:
+            raise ValueError(
+                f"unknown symmetric query logQ correction: {logq_query_correction}"
+            )
+        if symmetric_weight > 0.0 and query_correction == "batch_frequency":
+            query_logq, _ = batch_frequency_logq(rows, device=logits.device)
+            banner_logits = banner_logits - logq_power * query_logq.unsqueeze(0)
 
     if objective == "cross_entropy":
         labels = torch.arange(len(rows), device=logits.device)
@@ -296,6 +437,7 @@ def evaluate(
     *,
     cfg: DictConfig,
     device: torch.device,
+    global_banner_prior: GlobalBannerFrequencyPrior | None = None,
 ) -> dict[str, float]:
     was_training = model.training
     model.eval()
@@ -353,6 +495,10 @@ def evaluate(
                 cfg.training.get("logq_correction", "none")
             ),
             logq_power=float(cfg.training.get("logq_power", 1.0)),
+            global_banner_prior=global_banner_prior,
+            logq_query_correction=str(
+                cfg.training.get("logq_query_correction", "batch_frequency")
+            ),
         )
         total_loss += float(loss.cpu()) * len(batch)
         predicted = logits.argmax(dim=1)
@@ -375,6 +521,7 @@ def train_model(
     artifact_dir: Path,
     device: torch.device,
     tracker: Any | None = None,
+    global_banner_prior: GlobalBannerFrequencyPrior | None = None,
 ) -> tuple[TwoTowerV2, dict[str, Any]]:
     seed = int(cfg.training.seed)
     random.seed(seed)
@@ -481,6 +628,12 @@ def train_model(
                         cfg.training.get("logq_correction", "none")
                     ),
                     logq_power=float(cfg.training.get("logq_power", 1.0)),
+                    global_banner_prior=global_banner_prior,
+                    logq_query_correction=str(
+                        cfg.training.get(
+                            "logq_query_correction", "batch_frequency"
+                        )
+                    ),
                 )
             loss.backward()
             gradient_norm = float(
@@ -506,6 +659,7 @@ def train_model(
                     validation_rows,
                     cfg=cfg,
                     device=device,
+                    global_banner_prior=global_banner_prior,
                 )
                 LOGGER.info(
                     "validation rows=%s loss=%.4f acc=%.4f",
@@ -553,6 +707,7 @@ def train_model(
             validation_rows,
             cfg=cfg,
             device=device,
+            global_banner_prior=global_banner_prior,
         )
     elapsed = time.perf_counter() - started
     metrics = {
@@ -574,6 +729,8 @@ def train_model(
         ),
         "peak_rss_bytes": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024,
     }
+    if global_banner_prior is not None:
+        metrics["logq_prior"] = global_banner_prior.metrics()
     checkpoint = {
         "version": 2,
         "solution": str(cfg.experiment.name),

@@ -41,6 +41,7 @@ def main() -> int:
         copy_tokenizer_artifact,
         export_candidates,
         git_sha,
+        load_global_banner_prior,
         resolve_device,
         train_model,
     )
@@ -63,6 +64,10 @@ def main() -> int:
     tokenizer_path = copy_tokenizer_artifact(cfg, artifact_dir)
     strict_chronological = bool(cfg.training.get("strict_chronological", False))
     fields = source_fields(all_cardinalities(cfg))
+    if str(cfg.training.get("logq_correction", "none")).lower() == (
+        "global_banner_frequency"
+    ):
+        fields = tuple(dict.fromkeys((*fields, "banner_id")))
     source = YtTableSource(
         str(cfg.paths.train_table),
         str(cfg.paths.proxy),
@@ -74,6 +79,11 @@ def main() -> int:
         str(cfg.paths.proxy),
         fields=fields,
         allow_missing_fields=True,
+    )
+    global_banner_prior = load_global_banner_prior(
+        cfg,
+        expected_table=source.table,
+        expected_rows=source.row_count,
     )
     device = resolve_device(str(cfg.runtime.device))
     tracking_cfg = cfg.get("tracking", {}).get("underdeep", {})
@@ -88,6 +98,9 @@ def main() -> int:
             "experiment": str(cfg.experiment.name),
             "strict_chronological": strict_chronological,
             "train_table": str(cfg.paths.train_table),
+            "logq_correction": str(
+                cfg.training.get("logq_correction", "none")
+            ),
         },
         tags=["mla-camp", "two-tower-v2", str(cfg.experiment.name)],
     )
@@ -99,6 +112,7 @@ def main() -> int:
             artifact_dir=artifact_dir,
             device=device,
             tracker=tracker,
+            global_banner_prior=global_banner_prior,
         )
         candidates = export_candidates(
             cfg=cfg,
