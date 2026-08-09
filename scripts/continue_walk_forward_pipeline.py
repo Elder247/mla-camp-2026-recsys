@@ -138,9 +138,14 @@ def main() -> int:
         )
         if training.get("status") == "completed":
             break
-        if training.get("status") == "failed":
+        if training.get("status") in {
+            "failed",
+            "rejected",
+            "probe_failed",
+            "probe_timeout",
+        }:
             decision.update(
-                status="walk_forward_failed",
+                status="walk_forward_not_promoted",
                 finished_at=utc_now(),
                 training=training,
             )
