@@ -17,10 +17,24 @@ BANNER_FIELDS = (
     "text_word_ids",
 )
 ALL_FIELDS = QUERY_FIELDS + BANNER_FIELDS
-TEXT_SOURCE_FIELDS = ("query_text", "title_text", "text_text")
-NUMERIC_SOURCE_FIELDS = ("source_cost",)
+TEXT_SOURCE_FIELDS = ("query_text", "title_text", "text_text", "banner_url")
+NUMERIC_SOURCE_FIELDS = ("source_cost", "product_price")
 BPE_FIELDS = ("query_bpe_ids", "title_bpe_ids", "text_bpe_ids")
-DERIVED_FIELDS = ("query_region_ids", "source_cost_bucket_ids")
+DIRECT_SOURCE_FIELDS = (
+    "device_ids",
+    "age_bucket_ids",
+    "gender_ids",
+    "client_id_ids",
+    "order_id_ids",
+    "caesar_model_id_ids",
+    "caesar_sku_id_ids",
+)
+DERIVED_FIELDS = (
+    "query_region_ids",
+    "source_cost_bucket_ids",
+    "product_price_bucket_ids",
+    "url_domain_ids",
+)
 
 
 def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
@@ -28,9 +42,14 @@ def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
 
     fields = list(ALL_FIELDS)
     if any(name in cardinalities for name in BPE_FIELDS):
-        fields.extend(TEXT_SOURCE_FIELDS)
+        fields.extend(TEXT_SOURCE_FIELDS[:3])
+    fields.extend(name for name in DIRECT_SOURCE_FIELDS if name in cardinalities)
     if "source_cost_bucket_ids" in cardinalities:
         fields.append("source_cost")
+    if "product_price_bucket_ids" in cardinalities:
+        fields.append("product_price")
+    if "url_domain_ids" in cardinalities:
+        fields.append("banner_url")
     return tuple(fields)
 
 
@@ -187,6 +206,7 @@ def enrich_rows(
     tokenizer: Any | None,
     bpe_limits: Mapping[str, int] | None = None,
     source_cost_log1p_scale: float = 1.0,
+    product_price_log1p_scale: float = 1.0,
 ) -> list[dict[str, Any]]:
     """Add config-gated BPE and query-region inputs without changing YT data."""
 
@@ -231,6 +251,23 @@ def enrich_rows(
                 int(math.log1p(source_cost) * source_cost_log1p_scale),
             )
             row["source_cost_bucket_ids"] = [bucket]
+    if "product_price_bucket_ids" in cardinalities:
+        if product_price_log1p_scale <= 0.0:
+            raise ValueError("product_price_log1p_scale must be positive")
+        cardinality = int(cardinalities["product_price_bucket_ids"])
+        for row in enriched:
+            price = max(0.0, float(row.get("product_price") or 0.0))
+            bucket = min(
+                cardinality - 1,
+                int(math.log1p(price) * product_price_log1p_scale),
+            )
+            row["product_price_bucket_ids"] = [bucket]
+    if "url_domain_ids" in cardinalities:
+        cardinality = int(cardinalities["url_domain_ids"])
+        for row in enriched:
+            value = str(row.get("banner_url") or "").lower()
+            host = value.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+            row["url_domain_ids"] = [feature_bucket(host) % cardinality]
     return enriched
 
 

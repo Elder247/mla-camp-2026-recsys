@@ -244,6 +244,53 @@ def test_v4_config_aligns_loss_and_banner_feature_with_sourcecost() -> None:
     assert cfg.training.sourcecost_weight_max == 4.0
 
 
+def test_v6_config_adds_existing_context_and_ad_metadata() -> None:
+    cfg = load_config(
+        ROOT / "configs" / "two_tower" / "v6_context_metadata_chrono_10m.yaml"
+    )
+    assert cfg.model.query_cardinalities.device_ids == 1024
+    assert cfg.model.query_cardinalities.age_bucket_ids == 128
+    assert cfg.model.query_cardinalities.gender_ids == 8
+    assert cfg.model.banner_cardinalities.client_id_ids == 65536
+    assert cfg.model.banner_cardinalities.caesar_sku_id_ids == 65536
+    assert cfg.model.banner_cardinalities.product_price_bucket_ids == 256
+    assert cfg.model.banner_cardinalities.url_domain_ids == 65536
+    required = set(source_fields({
+        **dict(cfg.model.query_cardinalities),
+        **dict(cfg.model.banner_cardinalities),
+    }))
+    assert {
+        "device_ids",
+        "age_bucket_ids",
+        "gender_ids",
+        "client_id_ids",
+        "order_id_ids",
+        "caesar_model_id_ids",
+        "caesar_sku_id_ids",
+        "product_price",
+        "banner_url",
+    } <= required
+
+
+def test_product_price_and_url_domain_features_are_bounded() -> None:
+    rows = enrich_rows(
+        [
+            {
+                "product_price": 1_000_000.0,
+                "banner_url": "https://Example.COM:443/path?a=1",
+            }
+        ],
+        cardinalities={
+            "product_price_bucket_ids": 64,
+            "url_domain_ids": 128,
+        },
+        tokenizer=None,
+        product_price_log1p_scale=8.0,
+    )
+    assert rows[0]["product_price_bucket_ids"] == [63]
+    assert 0 <= rows[0]["url_domain_ids"][0] < 128
+
+
 def test_validation_finetune_split_is_strictly_temporal() -> None:
     rows = [
         {"show_time": 10, "hit_log_id": 3},

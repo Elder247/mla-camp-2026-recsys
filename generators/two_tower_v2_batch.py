@@ -30,6 +30,9 @@ def input_schema() -> list[dict[str, Any]]:
             "type": "integer",
             "nullable": True,
         },
+        {"name": "device", "path": "context.device", "type": "string", "nullable": True},
+        {"name": "age", "path": "context.age", "type": "integer", "nullable": True},
+        {"name": "gender", "path": "context.gender", "type": "integer", "nullable": True},
     ]
 
 
@@ -89,10 +92,17 @@ def load_model(
 
 def _query_row(example: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     tokens = tokenize(example.get("query"))[:32]
-    region_id = int((example.get("context") or {}).get("region_id") or 0)
+    context = example.get("context") or {}
+    region_id = int(context.get("region_id") or 0)
+    device = str(context.get("device") or "")
+    age = max(0, int(context.get("age") or 0))
+    gender = max(0, int(context.get("gender") or 0))
     return {
         "query_word_ids": [feature_bucket(token) for token in tokens],
         "region_ids": [feature_bucket(str(region_id))],
+        "device_ids": [feature_bucket(device)],
+        "age_bucket_ids": [age],
+        "gender_ids": [gender],
         "query_text": normalize(example.get("query")),
         "title_text": "",
         "text_text": "",

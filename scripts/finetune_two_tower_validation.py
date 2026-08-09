@@ -73,6 +73,7 @@ def main() -> int:
         export_candidates,
         git_sha,
         load_bpe_tokenizer,
+        numeric_feature_scale,
         resolve_device,
         retrieval_objective,
     )
@@ -120,6 +121,15 @@ def main() -> int:
         "BannerTitle",
         "BannerText",
         "SourceCost",
+        "ProductPrice",
+        "ClientID",
+        "OrderID",
+        "CaesarModelID",
+        "CaesarSkuID",
+        "BannerURL",
+        "DetailedDeviceType",
+        "Age",
+        "Gender",
         "IsClick",
     ]
     data = pq.read_table(Path(str(cfg.paths.val_file)), columns=columns).to_pydict()
@@ -138,12 +148,31 @@ def main() -> int:
                 "hit_log_id": int(data["HitLogID"][index]),
                 "show_time": int(data["ShowTime"][index]),
                 "source_cost": float(data["SourceCost"][index] or 0.0),
+                "product_price": float(data["ProductPrice"][index] or 0.0),
+                "banner_url": as_text(data["BannerURL"][index]),
                 "query_word_ids": [
                     feature_bucket(token) for token in tokenize(query)[:32]
                 ],
                 "region_ids": [feature_bucket(str(region))],
+                "device_ids": [
+                    feature_bucket(as_text(data["DetailedDeviceType"][index]))
+                ],
+                "age_bucket_ids": [max(0, int(data["Age"][index] or 0))],
+                "gender_ids": [max(0, int(data["Gender"][index] or 0))],
                 "banner_id_ids": [feature_bucket(str(banner))],
                 "ad_group_id_ids": [feature_bucket(str(group))],
+                "client_id_ids": [
+                    feature_bucket(str(data["ClientID"][index] or 0))
+                ],
+                "order_id_ids": [
+                    feature_bucket(str(data["OrderID"][index] or 0))
+                ],
+                "caesar_model_id_ids": [
+                    feature_bucket(str(data["CaesarModelID"][index] or 0))
+                ],
+                "caesar_sku_id_ids": [
+                    feature_bucket(str(data["CaesarSkuID"][index] or 0))
+                ],
                 "title_word_ids": [
                     feature_bucket(token) for token in tokenize(title)[:32]
                 ],
@@ -213,6 +242,9 @@ def main() -> int:
                         cfg.get("numeric_features", {}).get(
                             "source_cost_log1p_scale", 1.0
                         )
+                    ),
+                    product_price_log1p_scale=numeric_feature_scale(
+                        model_cfg, "product_price_log1p_scale"
                     ),
                 )
                 bags = pack_bags(batch, cardinalities=cardinalities, device=device)

@@ -42,6 +42,7 @@ from two_tower_v2.training import (
     copy_tokenizer_artifact,
     export_candidates,
     load_bpe_tokenizer,
+    numeric_feature_scale,
     retrieval_objective,
 )
 
@@ -154,6 +155,9 @@ def train_week(
             bpe_limits=limits,
             source_cost_log1p_scale=float(
                 cfg.get("numeric_features", {}).get("source_cost_log1p_scale", 1.0)
+            ),
+            product_price_log1p_scale=numeric_feature_scale(
+                cfg, "product_price_log1p_scale"
             ),
         )
         bags = pack_bags(batch, cardinalities=cardinalities, device=device)

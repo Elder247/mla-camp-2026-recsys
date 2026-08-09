@@ -1,0 +1,17 @@
+extends: v5_ad_metadata_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v6_context_metadata_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v6_context_metadata_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v6-context-metadata-chrono-10m
+
+model:
+  query_cardinalities:
+    device_ids: 1024
+    age_bucket_ids: 128
+    gender_ids: 8

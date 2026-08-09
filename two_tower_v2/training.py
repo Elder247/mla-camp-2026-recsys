@@ -106,6 +106,12 @@ def bpe_limits(cfg: DictConfig | Mapping[str, Any]) -> dict[str, int]:
     return {str(name): int(value) for name, value in dict(configured).items()}
 
 
+def numeric_feature_scale(
+    cfg: DictConfig | Mapping[str, Any], name: str
+) -> float:
+    return float(cfg.get("numeric_features", {}).get(name, 1.0))
+
+
 def copy_tokenizer_artifact(
     cfg: DictConfig | Mapping[str, Any], artifact_dir: Path
 ) -> Path | None:
@@ -246,6 +252,9 @@ def evaluate(
             source_cost_log1p_scale=float(
                 cfg.get("numeric_features", {}).get("source_cost_log1p_scale", 1.0)
             ),
+            product_price_log1p_scale=numeric_feature_scale(
+                cfg, "product_price_log1p_scale"
+            ),
         )
         bags = pack_bags(batch, cardinalities=cardinalities, device=device)
         with torch.autocast(
@@ -356,6 +365,9 @@ def train_model(
                     cfg.get("numeric_features", {}).get(
                         "source_cost_log1p_scale", 1.0
                     )
+                ),
+                product_price_log1p_scale=numeric_feature_scale(
+                    cfg, "product_price_log1p_scale"
                 ),
             )
             bags = pack_bags(batch, cardinalities=cardinalities, device=device)
@@ -502,6 +514,16 @@ def _candidate_row(columns: dict[str, list[Any]], index: int) -> tuple[dict, dic
         "title_text": normalize(title),
         "text_text": normalize(text),
         "source_cost": float(columns["SourceCost"][index] or 0.0),
+        "product_price": float(columns["ProductPrice"][index] or 0.0),
+        "banner_url": as_text(columns["BannerURL"][index]),
+        "client_id_ids": [feature_bucket(str(columns["ClientID"][index] or 0))],
+        "order_id_ids": [feature_bucket(str(columns["OrderID"][index] or 0))],
+        "caesar_model_id_ids": [
+            feature_bucket(str(columns["CaesarModelID"][index] or 0))
+        ],
+        "caesar_sku_id_ids": [
+            feature_bucket(str(columns["CaesarSkuID"][index] or 0))
+        ],
     }
     metadata = {
         "banner_id": banner_id,
@@ -572,6 +594,9 @@ def export_candidates(
                     cfg.get("numeric_features", {}).get(
                         "source_cost_log1p_scale", 1.0
                     )
+                ),
+                product_price_log1p_scale=numeric_feature_scale(
+                    cfg, "product_price_log1p_scale"
                 ),
             )
             bags = pack_bags(
