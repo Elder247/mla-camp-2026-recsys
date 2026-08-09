@@ -605,3 +605,34 @@ Chronological temporal and cross-pool decision:
   watcher will combine its test ranking with completed old full
   `20260809_0601_i2_ensemble_full`, emit a separate parquet/manifest, and run
   the strict 10,000-request, 50-unique-indexed-banner validation before upload.
+
+Chronological cross-pool full/private result:
+
+- `20260809_0720_i2_chrono_full` completed in about `26.5m`; the expensive
+  full feature build took about `10m`, CatBoost fit `53s`, and submission
+  inference `37s`;
+- the selected old/chronological cross-pool materialization produced exactly
+  10,000 unique requests and 50 unique indexed banners per request. Its
+  parquet SHA-256 is
+  `2c60f676b2e18f6992f97dc2b53e6482f8cbd9d2107618479e22d930fe8d8a0f`;
+- leaderboard upload `chrono100m crosspool qrmse+yeti e02 n75` scored private
+  SC Recall@50 `0.6262`, Recall@50 `0.5153` and Recall@10 `0.3750`. This is a
+  new personal best (`+0.46 pp` SC Recall@50 over `0.6216`), but it is still
+  below the `0.65` target;
+- a subsequent 42-second cached four-source top-50 ensemble selected on the
+  earlier half of holdout reached only `0.63168` SC Recall@50 on the later
+  half and was rejected without a full run.
+
+Dataset-size gate for subsequent TwoTower hypotheses:
+
+- the already trained strict-chronological 10M model required `71.5s` for
+  training and about `36s` for the one-million-banner export. Its fresh
+  candidate probe generated holdout candidates in `73.2s`;
+- against the full-data TwoTower baseline, 10M SC Recall@50/500 is
+  `0.455262/0.654963` versus `0.518348/0.707873`. The 10M model is therefore
+  rejected for promotion even though it is useful for fast hypothesis
+  screening;
+- 1M remains schema/code smoke only. New model ideas use 10M as a cheap gate;
+  only a clearly positive holdout result is retrained on 100M. When complete
+  history coverage is needed cheaply, prefer deterministic 10% gradient
+  sampling over truncating the history to its first 10M impressions.
