@@ -943,3 +943,9 @@ Fast logQ context screens and bounded ensemble (2026-08-09):
   `+0.000720/+0.006434/+0.003346`. Its strict output SHA-256 is
   `3af73e81115d95e9f95c86e0506dc8cebd4a7b2675710889cb5bd43c9f3a7378`;
   these are the only two geometry variants queued for private evaluation.
+- fixed `5%` additions of banner-hash and output128 to the BPE/context winner
+  all reduced the late split and were rejected. A one-shot seven-source fusion
+  was also tested to avoid the accepted cascade's repeated top-50 truncation;
+  its best early SC@50 rose to `0.686669`, but late fell to `0.657785`, below
+  the matching control `0.658826`. No flat-fusion variant is promoted because
+  the future private split is later in time.
