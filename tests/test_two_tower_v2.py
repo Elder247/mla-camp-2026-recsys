@@ -322,6 +322,28 @@ def test_v7_uses_more_in_batch_negatives() -> None:
     assert full.paths.artifact_dir.endswith("v7_large_batch_chrono_100m_model")
 
 
+def test_validation_source_can_neutralize_new_optional_fields(monkeypatch) -> None:
+    from two_tower_v2.data import YtTableSource
+
+    class Client:
+        def exists(self, path):
+            return True
+
+        def get(self, path):
+            if path.endswith("/@row_count"):
+                return 1
+            return [{"name": "banner_id_ids"}]
+
+    monkeypatch.setattr("common.yt_data.make_client", lambda: Client())
+    source = YtTableSource(
+        "//validation",
+        "proxy",
+        fields=("banner_id_ids", "banner_id", "banner_url"),
+        allow_missing_fields=True,
+    )
+    assert source.read_fields == ("banner_id_ids",)
+
+
 def test_validation_finetune_split_is_strictly_temporal() -> None:
     rows = [
         {"show_time": 10, "hit_log_id": 3},

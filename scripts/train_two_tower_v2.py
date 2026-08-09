@@ -73,6 +73,7 @@ def main() -> int:
         str(cfg.paths.validation_table),
         str(cfg.paths.proxy),
         fields=fields,
+        allow_missing_fields=True,
     )
     device = resolve_device(str(cfg.runtime.device))
     tracking_cfg = cfg.get("tracking", {}).get("underdeep", {})

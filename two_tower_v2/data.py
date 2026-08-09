@@ -112,6 +112,7 @@ class YtTableSource:
         *,
         ordered: bool = False,
         fields: Sequence[str] | None = None,
+        allow_missing_fields: bool = False,
     ) -> None:
         from common.yt_data import make_client
 
@@ -127,6 +128,8 @@ class YtTableSource:
         self.columns = columns
         self.fields = tuple(fields or ALL_FIELDS)
         missing = set(self.fields) - columns - set(NUMERIC_SOURCE_FIELDS)
+        if allow_missing_fields:
+            missing.clear()
         if missing:
             raise ValueError(f"YT table {table} misses fields: {sorted(missing)}")
         self.read_fields = tuple(name for name in self.fields if name in columns)
