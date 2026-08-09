@@ -4,11 +4,11 @@ experiment:
   name: two_tower_v4_scweighted_chrono_10m
 
 paths:
-  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v4_scweighted_chrono_10m_model
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v4_scweighted_chrono_10m_model_r1
 
 tracking:
   underdeep:
-    run_name: two-tower-v4-scweighted-chrono-10m
+    run_name: two-tower-v4-scweighted-chrono-10m-r1
 
 model:
   banner_cardinalities:
