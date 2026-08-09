@@ -13,6 +13,7 @@ dependencies = [
 ranker = ["catboost>=1.2.10,<2"]
 yandex = ["yql>=1.2.128", "yandex-yt"]
 monitoring = ["yandex-underdeep==1.0.58"]
+two-tower = ["tokenizers>=0.20,<1", "torch>=2.5,<3"]
 dev = ["pytest>=8,<9"]
 
 [tool.ruff]

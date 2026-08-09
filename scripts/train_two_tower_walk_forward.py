@@ -80,8 +80,14 @@ def main() -> int:
     args = arguments()
     cfg = load_config(args.config.resolve())
     sys.path.insert(0, str(cfg.paths.step2_root))
-    from two_tower_v2.data import YtTableSource, YtWeekTableSource
-    from two_tower_v2.training import atomic_json, build_model, evaluate, resolve_device
+    from two_tower_v2.data import YtTableSource, YtWeekTableSource, source_fields
+    from two_tower_v2.training import (
+        all_cardinalities,
+        atomic_json,
+        build_model,
+        evaluate,
+        resolve_device,
+    )
     from two_tower_v2.walk_forward import (
         export_snapshot,
         extract_oof_requests,
@@ -147,6 +153,7 @@ def main() -> int:
         atomic_json(artifact_dir / "oof_requests.json", report)
 
     device = resolve_device(str(cfg.runtime.device))
+    fields = source_fields(all_cardinalities(cfg))
     checkpoint_dir = artifact_dir / "checkpoints"
     completed = sorted(checkpoint_dir.glob("after_week_*.pt"))
     if completed:
@@ -204,6 +211,7 @@ def main() -> int:
             str(cfg.paths.proxy),
             start=start,
             end=start + 604800,
+            fields=fields,
         )
         train_sample_fraction = float(
             cfg.walk_forward.get("train_sample_fraction", 1.0)
@@ -294,7 +302,9 @@ def main() -> int:
             lifecycle=final_lifecycle,
         )
     validation = YtTableSource(
-        str(cfg.paths.validation_table), str(cfg.paths.proxy)
+        str(cfg.paths.validation_table), str(cfg.paths.proxy), fields=source_fields(
+            all_cardinalities(final_model_cfg)
+        )
     )
     health = evaluate(
         final_model,

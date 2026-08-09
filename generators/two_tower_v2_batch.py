@@ -6,13 +6,15 @@ from typing import Any
 import numpy as np
 import torch
 
-from common.text import tokenize
-from two_tower_v2.data import feature_bucket, pack_bags
+from common.text import normalize, tokenize
+from two_tower_v2.data import enrich_rows, feature_bucket, pack_bags
 from two_tower_v2.training import (
     EMBEDDINGS_FILENAME,
     METADATA_FILENAME,
     MODEL_FILENAME,
+    bpe_limits,
     build_model,
+    load_bpe_tokenizer,
 )
 
 
@@ -55,6 +57,7 @@ def load_model(
     if int(checkpoint.get("version", 0)) != 2:
         raise ValueError(f"Unsupported TwoTower v2 checkpoint: {checkpoint.get('version')}")
     config = checkpoint["config"]
+    tokenizer = load_bpe_tokenizer(config, artifact_dir=artifact_dir)
     network = build_model(config)
     network.load_state_dict(checkpoint["state_dict"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,6 +78,7 @@ def load_model(
         "device": device,
         "candidate_vectors": candidate_vectors,
         "candidate_metadata": metadata,
+        "tokenizer": tokenizer,
         "metadata": {
             "solution": SOLUTION_NAME,
             "candidates": candidate_vectors.shape[0],
@@ -83,12 +87,15 @@ def load_model(
     }
 
 
-def _query_row(example: dict[str, Any]) -> tuple[dict[str, list[int]], list[str]]:
+def _query_row(example: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     tokens = tokenize(example.get("query"))[:32]
     region_id = int((example.get("context") or {}).get("region_id") or 0)
     return {
         "query_word_ids": [feature_bucket(token) for token in tokens],
         "region_ids": [feature_bucket(str(region_id))],
+        "query_text": normalize(example.get("query")),
+        "title_text": "",
+        "text_text": "",
     }, tokens
 
 
@@ -109,6 +116,12 @@ def rank_batch(
         str(k): int(v)
         for k, v in model["config"]["model"]["query_cardinalities"].items()
     }
+    rows = enrich_rows(
+        rows,
+        cardinalities=query_cardinalities,
+        tokenizer=model.get("tokenizer"),
+        bpe_limits=bpe_limits(model["config"]),
+    )
     bags = pack_bags(
         rows,
         cardinalities=query_cardinalities,

@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import resource
+import shutil
 import subprocess
 import time
 from collections.abc import Mapping
@@ -16,10 +17,11 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.nn import functional as F
 
-from common.text import as_text, tokenize
+from common.text import as_text, normalize, tokenize
 from two_tower_v2.data import (
     YtTableSource,
     batches,
+    enrich_rows,
     feature_bucket,
     pack_bags,
     shuffled_rows,
@@ -31,6 +33,7 @@ LOGGER = logging.getLogger(__name__)
 MODEL_FILENAME = "model.pt"
 EMBEDDINGS_FILENAME = "candidate_embeddings.npy"
 METADATA_FILENAME = "candidate_metadata.parquet"
+TOKENIZER_FILENAME = "tokenizer.json"
 
 
 def atomic_json(path: Path, value: Mapping[str, Any]) -> None:
@@ -62,6 +65,7 @@ def build_model(cfg: DictConfig | Mapping[str, Any]) -> TwoTowerV2:
         cross_layers=int(model["cross_layers"]),
         deep_layers=int(model["deep_layers"]),
         dropout=float(model["dropout"]),
+        deep_residual=bool(model.get("deep_residual", False)),
     )
 
 
@@ -71,6 +75,104 @@ def all_cardinalities(cfg: DictConfig | Mapping[str, Any]) -> dict[str, int]:
         **{str(k): int(v) for k, v in model["query_cardinalities"].items()},
         **{str(k): int(v) for k, v in model["banner_cardinalities"].items()},
     }
+
+
+def load_bpe_tokenizer(
+    cfg: DictConfig | Mapping[str, Any],
+    *,
+    artifact_dir: Path | None = None,
+) -> Any | None:
+    cardinalities = all_cardinalities(cfg)
+    if not any(name.endswith("_bpe_ids") for name in cardinalities):
+        return None
+    from tokenizers import Tokenizer
+
+    candidates = []
+    if artifact_dir is not None:
+        candidates.append(artifact_dir / TOKENIZER_FILENAME)
+    configured = cfg.get("paths", {}).get("tokenizer_file")
+    if configured:
+        candidates.append(Path(str(configured)))
+    path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if path is None:
+        raise FileNotFoundError(
+            "BPE fields are configured but tokenizer.json is unavailable"
+        )
+    return Tokenizer.from_file(str(path))
+
+
+def bpe_limits(cfg: DictConfig | Mapping[str, Any]) -> dict[str, int]:
+    configured = cfg.get("text_features", {}).get("limits", {})
+    return {str(name): int(value) for name, value in dict(configured).items()}
+
+
+def copy_tokenizer_artifact(
+    cfg: DictConfig | Mapping[str, Any], artifact_dir: Path
+) -> Path | None:
+    tokenizer = load_bpe_tokenizer(cfg)
+    if tokenizer is None:
+        return None
+    source = Path(str(cfg["paths"]["tokenizer_file"]))
+    target = artifact_dir / TOKENIZER_FILENAME
+    if source.resolve() != target.resolve():
+        shutil.copy2(source, target)
+    return target
+
+
+def positive_mask(
+    rows: list[dict[str, Any]], *, device: torch.device
+) -> torch.Tensor:
+    """Mark repeated-banner and repeated-query clicks as genuine positives."""
+
+    query_ids: dict[tuple[tuple[int, ...], tuple[int, ...]], int] = {}
+    query_values = []
+    banner_values = []
+    for index, row in enumerate(rows):
+        query_key = (
+            tuple(int(value) for value in row.get("query_word_ids") or ()),
+            tuple(int(value) for value in row.get("region_ids") or ()),
+        )
+        query_values.append(query_ids.setdefault(query_key, len(query_ids)))
+        banner = row.get("banner_id_ids") or ()
+        banner_values.append(int(banner[0]) if banner else -(index + 1))
+    query_tensor = torch.tensor(query_values, dtype=torch.long, device=device)
+    banner_tensor = torch.tensor(banner_values, dtype=torch.long, device=device)
+    return (query_tensor[:, None] == query_tensor[None, :]) | (
+        banner_tensor[:, None] == banner_tensor[None, :]
+    )
+
+
+def retrieval_objective(
+    logits: torch.Tensor,
+    rows: list[dict[str, Any]],
+    *,
+    objective: str,
+    symmetric_weight: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if objective == "cross_entropy":
+        labels = torch.arange(len(rows), device=logits.device)
+        mask = torch.eye(len(rows), dtype=torch.bool, device=logits.device)
+        return F.cross_entropy(logits.float(), labels), mask
+    if objective != "multi_positive":
+        raise ValueError(f"unknown TwoTower objective: {objective}")
+    if symmetric_weight < 0:
+        raise ValueError("symmetric_weight must be non-negative")
+    mask = positive_mask(rows, device=logits.device)
+
+    def direction_loss(values: torch.Tensor, positives: torch.Tensor) -> torch.Tensor:
+        numerator = torch.logsumexp(
+            values.float().masked_fill(~positives, float("-inf")), dim=1
+        )
+        denominator = torch.logsumexp(values.float(), dim=1)
+        return (denominator - numerator).mean()
+
+    query_loss = direction_loss(logits, mask)
+    if symmetric_weight == 0:
+        return query_loss, mask
+    banner_loss = direction_loss(logits.T, mask.T)
+    return (
+        query_loss + symmetric_weight * banner_loss
+    ) / (1.0 + symmetric_weight), mask
 
 
 @torch.inference_mode()
@@ -87,8 +189,17 @@ def evaluate(
     correct = 0
     examples = 0
     cardinalities = all_cardinalities(cfg)
+    tokenizer = load_bpe_tokenizer(cfg)
+    objective = str(cfg.training.get("objective", "cross_entropy"))
+    symmetric_weight = float(cfg.training.get("symmetric_weight", 0.0))
     batch_size = int(cfg.training.batch_size)
     for batch in batches(rows, batch_size):
+        batch = enrich_rows(
+            batch,
+            cardinalities=cardinalities,
+            tokenizer=tokenizer,
+            bpe_limits=bpe_limits(cfg),
+        )
         bags = pack_bags(batch, cardinalities=cardinalities, device=device)
         with torch.autocast(
             device_type=device.type,
@@ -98,9 +209,15 @@ def evaluate(
             query = model.encode_query(bags)
             banner = model.encode_banner(bags)
             logits = query @ banner.T / float(cfg.training.temperature)
-        labels = torch.arange(len(batch), device=device)
-        total_loss += float(F.cross_entropy(logits.float(), labels).cpu()) * len(batch)
-        correct += int((logits.argmax(dim=1) == labels).sum().cpu())
+        loss, mask = retrieval_objective(
+            logits,
+            batch,
+            objective=objective,
+            symmetric_weight=symmetric_weight,
+        )
+        total_loss += float(loss.cpu()) * len(batch)
+        predicted = logits.argmax(dim=1)
+        correct += int(mask[torch.arange(len(batch), device=device), predicted].sum().cpu())
         examples += len(batch)
     if was_training:
         model.train()
@@ -134,7 +251,11 @@ def train_model(
         weight_decay=float(cfg.training.weight_decay),
     )
     cardinalities = all_cardinalities(cfg)
+    tokenizer = load_bpe_tokenizer(cfg)
+    limits = bpe_limits(cfg)
     validation_rows = list(validation.rows())
+    objective = str(cfg.training.get("objective", "cross_entropy"))
+    symmetric_weight = float(cfg.training.get("symmetric_weight", 0.0))
     started = time.perf_counter()
     data_wait_seconds = 0.0
     train_seconds = 0.0
@@ -170,6 +291,12 @@ def train_model(
                     break
                 batch = batch[:remaining]
             train_started = time.perf_counter()
+            batch = enrich_rows(
+                batch,
+                cardinalities=cardinalities,
+                tokenizer=tokenizer,
+                bpe_limits=limits,
+            )
             bags = pack_bags(batch, cardinalities=cardinalities, device=device)
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(
@@ -180,8 +307,12 @@ def train_model(
                 query = model.encode_query(bags)
                 banner = model.encode_banner(bags)
                 logits = query @ banner.T / float(cfg.training.temperature)
-                labels = torch.arange(len(batch), device=device)
-                loss = F.cross_entropy(logits.float(), labels)
+                loss, mask = retrieval_objective(
+                    logits,
+                    batch,
+                    objective=objective,
+                    symmetric_weight=symmetric_weight,
+                )
             loss.backward()
             gradient_norm = float(
                 torch.nn.utils.clip_grad_norm_(
@@ -193,7 +324,13 @@ def train_model(
             step += 1
             examples_seen += len(batch)
             last_loss = float(loss.detach().cpu())
-            last_accuracy = float((logits.argmax(dim=1) == labels).float().mean().cpu())
+            predicted = logits.argmax(dim=1)
+            last_accuracy = float(
+                mask[torch.arange(len(batch), device=device), predicted]
+                .float()
+                .mean()
+                .cpu()
+            )
             if examples_seen >= next_validation:
                 last_validation = evaluate(
                     model,
@@ -291,6 +428,9 @@ def _candidate_row(columns: dict[str, list[Any]], index: int) -> tuple[dict, dic
         "ad_group_id_ids": [feature_bucket(str(group_id))],
         "title_word_ids": [feature_bucket(token) for token in tokenize(title)[:32]],
         "text_word_ids": [feature_bucket(token) for token in tokenize(text)[:64]],
+        "query_text": "",
+        "title_text": normalize(title),
+        "text_text": normalize(text),
     }
     metadata = {
         "banner_id": banner_id,
@@ -323,6 +463,8 @@ def export_candidates(
     banner_cardinalities = {
         str(k): int(v) for k, v in cfg.model.banner_cardinalities.items()
     }
+    tokenizer = load_bpe_tokenizer(cfg, artifact_dir=artifact_dir)
+    limits = bpe_limits(cfg)
     embeddings: list[np.ndarray] = []
     metadata_path = artifact_dir / METADATA_FILENAME
     temporary_metadata = metadata_path.with_suffix(".parquet.tmp")
@@ -350,6 +492,12 @@ def export_candidates(
                 rows.append(row)
                 for name, value in item.items():
                     metadata[name].append(value)
+            rows = enrich_rows(
+                rows,
+                cardinalities=banner_cardinalities,
+                tokenizer=tokenizer,
+                bpe_limits=limits,
+            )
             bags = pack_bags(
                 rows,
                 cardinalities=banner_cardinalities,

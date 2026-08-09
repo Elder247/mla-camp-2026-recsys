@@ -91,14 +91,16 @@ class CrossLayer(nn.Module):
 
 
 class DeepLayer(nn.Module):
-    def __init__(self, hidden_dim: int, dropout: float) -> None:
+    def __init__(self, hidden_dim: int, dropout: float, *, residual: bool) -> None:
         super().__init__()
         self.linear = nn.Linear(hidden_dim, hidden_dim)
         self.norm = nn.LayerNorm(hidden_dim)
         self.dropout = nn.Dropout(dropout)
+        self.residual = bool(residual)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.dropout(F.gelu(self.norm(self.linear(x))))
+        transformed = self.dropout(F.gelu(self.norm(self.linear(x))))
+        return x + transformed if self.residual else transformed
 
 
 class DcnTower(nn.Module):
@@ -111,6 +113,7 @@ class DcnTower(nn.Module):
         cross_layers: int,
         deep_layers: int,
         dropout: float,
+        deep_residual: bool = False,
     ) -> None:
         super().__init__()
         if cross_layers <= 0 or deep_layers <= 0:
@@ -124,7 +127,10 @@ class DcnTower(nn.Module):
             [CrossLayer(hidden_dim) for _ in range(cross_layers)]
         )
         self.deep = nn.ModuleList(
-            [DeepLayer(hidden_dim, dropout) for _ in range(deep_layers)]
+            [
+                DeepLayer(hidden_dim, dropout, residual=deep_residual)
+                for _ in range(deep_layers)
+            ]
         )
         self.output = nn.Linear(2 * hidden_dim, output_dim)
 
@@ -151,6 +157,7 @@ class TwoTowerV2(nn.Module):
         cross_layers: int,
         deep_layers: int,
         dropout: float,
+        deep_residual: bool = False,
     ) -> None:
         super().__init__()
         policy = {
@@ -174,6 +181,7 @@ class TwoTowerV2(nn.Module):
             cross_layers=cross_layers,
             deep_layers=deep_layers,
             dropout=dropout,
+            deep_residual=deep_residual,
         )
         self.banner_tower = DcnTower(
             input_dim=self.banner_fields.output_dim,
@@ -182,6 +190,7 @@ class TwoTowerV2(nn.Module):
             cross_layers=cross_layers,
             deep_layers=deep_layers,
             dropout=dropout,
+            deep_residual=deep_residual,
         )
 
     def encode_query(
@@ -197,4 +206,3 @@ class TwoTowerV2(nn.Module):
     ) -> torch.Tensor:
         selected = {name: bags[name] for name in self.banner_fields.field_names}
         return self.banner_tower(self.banner_fields(selected))
-

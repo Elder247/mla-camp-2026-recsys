@@ -38,6 +38,7 @@ SELECT
     CAST(ShowTime AS Uint64) AS show_time,
     UniqID AS uniq_id,
     $normalize(SearchQuery) AS query,
+    $normalize(SearchQuery) AS query_text,
     RegionID AS region_id,
     CryptaIDv2 AS crypta_id_v2,
     DetailedDeviceType AS device,
@@ -50,7 +51,9 @@ SELECT
     AsList($bucket(CAST(BannerID AS String))) AS banner_id_ids,
     AsList($bucket(CAST(COALESCE(GroupExportID, 0) AS String))) AS ad_group_id_ids,
     $hash_tokens($tokens(BannerTitle, 32)) AS title_word_ids,
-    $hash_tokens($tokens(BannerText, 64)) AS text_word_ids
+    $normalize(BannerTitle) AS title_text,
+    $hash_tokens($tokens(BannerText, 64)) AS text_word_ids,
+    $normalize(BannerText) AS text_text
 FROM $input
 WHERE
     ShowTime IS NOT NULL

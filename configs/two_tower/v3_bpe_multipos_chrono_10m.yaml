@@ -1,0 +1,14 @@
+extends: v3_bpe_multipos_base.yaml
+
+experiment:
+  name: two_tower_v3_bpe_multipos_chrono_10m
+
+paths:
+  raw_train_table: //home/bm/users/argus/mla/data/train_10m
+  weekly_train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_10m_bpe_v2
+  train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_10m_bpe_v2
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_chrono_10m
+
+tracking:
+  underdeep:
+    run_name: two-tower-v3-bpe-multipos-chrono-10m

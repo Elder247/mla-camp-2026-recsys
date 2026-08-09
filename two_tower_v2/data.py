@@ -16,6 +16,18 @@ BANNER_FIELDS = (
     "text_word_ids",
 )
 ALL_FIELDS = QUERY_FIELDS + BANNER_FIELDS
+TEXT_SOURCE_FIELDS = ("query_text", "title_text", "text_text")
+BPE_FIELDS = ("query_bpe_ids", "title_bpe_ids", "text_bpe_ids")
+DERIVED_FIELDS = ("query_region_ids",)
+
+
+def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
+    """Return only YT columns needed to construct the configured model inputs."""
+
+    fields = list(ALL_FIELDS)
+    if any(name in cardinalities for name in BPE_FIELDS):
+        fields.extend(TEXT_SOURCE_FIELDS)
+    return tuple(fields)
 
 
 def feature_bucket(value: str) -> int:
@@ -51,7 +63,14 @@ def yt_read_options(*, ordered: bool) -> dict[str, bool]:
 
 
 class YtTableSource:
-    def __init__(self, table: str, proxy: str, *, ordered: bool = False) -> None:
+    def __init__(
+        self,
+        table: str,
+        proxy: str,
+        *,
+        ordered: bool = False,
+        fields: Sequence[str] | None = None,
+    ) -> None:
         from common.yt_data import make_client
 
         self.table = table
@@ -64,29 +83,42 @@ class YtTableSource:
         schema = self.client.get(f"{table}/@schema")
         columns = {str(item["name"]) for item in schema}
         self.columns = columns
-        missing = set(ALL_FIELDS) - columns
+        self.fields = tuple(fields or ALL_FIELDS)
+        missing = set(self.fields) - columns
         if missing:
             raise ValueError(f"YT table {table} misses fields: {sorted(missing)}")
         order = "chronological" if self.ordered else "parallel"
         self.description = f"YT {proxy}:{table} ({order})"
 
-    def rows(self) -> Iterator[dict[str, list[int]]]:
+    def rows(self) -> Iterator[dict[str, Any]]:
         import yt.wrapper as yt
 
-        path = yt.TablePath(self.table, columns=list(ALL_FIELDS))
+        path = yt.TablePath(self.table, columns=list(self.fields))
         for raw in self.client.read_table(
             path,
             **yt_read_options(ordered=self.ordered),
         ):
             yield {
-                name: [int(value) for value in raw.get(name) or ()]
-                for name in ALL_FIELDS
+                name: (
+                    str(raw.get(name) or "")
+                    if name in TEXT_SOURCE_FIELDS
+                    else [int(value) for value in raw.get(name) or ()]
+                )
+                for name in self.fields
             }
 
 
 class YtWeekTableSource(YtTableSource):
-    def __init__(self, table: str, proxy: str, *, start: int, end: int) -> None:
-        super().__init__(table, proxy)
+    def __init__(
+        self,
+        table: str,
+        proxy: str,
+        *,
+        start: int,
+        end: int,
+        fields: Sequence[str] | None = None,
+    ) -> None:
+        super().__init__(table, proxy, fields=fields)
         sorted_by_path = f"{table}/@sorted_by"
         sorted_by = (
             [str(value) for value in self.client.get(sorted_by_path)]
@@ -105,13 +137,13 @@ class YtWeekTableSource(YtTableSource):
         *,
         sample_fraction: float = 1.0,
         sample_seed: int = 0,
-    ) -> Iterator[dict[str, list[int]]]:
+    ) -> Iterator[dict[str, Any]]:
         import yt.wrapper as yt
 
         fraction = float(sample_fraction)
         if not 0.0 < fraction <= 1.0:
             raise ValueError("sample fraction must be in (0, 1]")
-        columns = list(ALL_FIELDS)
+        columns = list(self.fields)
         if fraction < 1.0:
             if "uniq_id" not in self.columns:
                 raise ValueError(
@@ -140,9 +172,55 @@ class YtWeekTableSource(YtTableSource):
             ):
                 continue
             yield {
-                name: [int(value) for value in raw.get(name) or ()]
-                for name in ALL_FIELDS
+                name: (
+                    str(raw.get(name) or "")
+                    if name in TEXT_SOURCE_FIELDS
+                    else [int(value) for value in raw.get(name) or ()]
+                )
+                for name in self.fields
             }
+
+
+def enrich_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    cardinalities: Mapping[str, int],
+    tokenizer: Any | None,
+    bpe_limits: Mapping[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Add config-gated BPE and query-region inputs without changing YT data."""
+
+    enriched = [dict(row) for row in rows]
+    limits = dict(bpe_limits or {})
+    text_to_feature = {
+        "query_text": "query_bpe_ids",
+        "title_text": "title_bpe_ids",
+        "text_text": "text_bpe_ids",
+    }
+    for text_name, feature_name in text_to_feature.items():
+        if feature_name not in cardinalities:
+            continue
+        if tokenizer is None:
+            raise ValueError(f"{feature_name} requires a configured BPE tokenizer")
+        encoded = tokenizer.encode_batch(
+            [str(row.get(text_name) or "") for row in enriched]
+        )
+        limit = int(limits.get(feature_name, 0))
+        cardinality = int(cardinalities[feature_name])
+        for row, item in zip(enriched, encoded):
+            ids = item.ids[:limit] if limit > 0 else item.ids
+            row[feature_name] = [int(value) % cardinality for value in ids]
+
+    if "query_region_ids" in cardinalities:
+        cardinality = int(cardinalities["query_region_ids"])
+        for row in enriched:
+            region = int(next(iter(row.get("region_ids") or (0,))))
+            query = row.get("query_word_ids") or (0,)
+            row["query_region_ids"] = [
+                ((int(token) * 16_777_619) ^ region) % cardinality
+                for token in query
+            ]
+    return enriched
 
 
 def shuffled_rows(

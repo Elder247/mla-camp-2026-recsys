@@ -26,13 +26,23 @@ from mla_recsys.counters import (
     week_start,
 )
 from mla_recsys.data import write_request_parquet
-from two_tower_v2.data import YtWeekTableSource, batches, pack_bags, shuffled_rows
+from two_tower_v2.data import (
+    YtWeekTableSource,
+    batches,
+    enrich_rows,
+    pack_bags,
+    shuffled_rows,
+)
 from two_tower_v2.training import (
     MODEL_FILENAME,
     all_cardinalities,
     atomic_json,
+    bpe_limits,
     build_model,
+    copy_tokenizer_artifact,
     export_candidates,
+    load_bpe_tokenizer,
+    retrieval_objective,
 )
 
 
@@ -102,6 +112,10 @@ def train_week(
 ) -> dict[str, Any]:
     model.train()
     cardinalities = all_cardinalities(cfg)
+    tokenizer = load_bpe_tokenizer(cfg)
+    limits = bpe_limits(cfg)
+    objective = str(cfg.training.get("objective", "cross_entropy"))
+    symmetric_weight = float(cfg.training.get("symmetric_weight", 0.0))
     started = time.perf_counter()
     examples_seen = 0
     steps = 0
@@ -133,6 +147,12 @@ def train_week(
                 break
             batch = batch[:remaining]
         train_started = time.perf_counter()
+        batch = enrich_rows(
+            batch,
+            cardinalities=cardinalities,
+            tokenizer=tokenizer,
+            bpe_limits=limits,
+        )
         bags = pack_bags(batch, cardinalities=cardinalities, device=device)
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(
@@ -143,8 +163,12 @@ def train_week(
             query = model.encode_query(bags)
             banner = model.encode_banner(bags)
             logits = query @ banner.T / float(cfg.training.temperature)
-            labels = torch.arange(len(batch), device=device)
-            loss = F.cross_entropy(logits.float(), labels)
+            loss, positive = retrieval_objective(
+                logits,
+                batch,
+                objective=objective,
+                symmetric_weight=symmetric_weight,
+            )
         loss.backward()
         torch.nn.utils.clip_grad_norm_(
             model.parameters(), float(cfg.training.gradient_clip)
@@ -154,7 +178,13 @@ def train_week(
         examples_seen += len(batch)
         steps += 1
         last_loss = float(loss.detach().cpu())
-        last_accuracy = float((logits.argmax(dim=1) == labels).float().mean().cpu())
+        predicted = logits.argmax(dim=1)
+        last_accuracy = float(
+            positive[torch.arange(len(batch), device=device), predicted]
+            .float()
+            .mean()
+            .cpu()
+        )
         if steps % int(cfg.training.log_every) == 0:
             elapsed = time.perf_counter() - started
             live = {
@@ -248,6 +278,7 @@ def export_snapshot(
     if artifact_dir.exists() and any(artifact_dir.iterdir()):
         raise FileExistsError(f"Incomplete snapshot exists: {artifact_dir}")
     artifact_dir.mkdir(parents=True, exist_ok=True)
+    tokenizer_path = copy_tokenizer_artifact(cfg, artifact_dir)
     checkpoint = {
         "version": 2,
         "solution": str(cfg.experiment.name),
@@ -264,6 +295,13 @@ def export_snapshot(
         artifact_dir=artifact_dir,
         device=device,
     )
+    artifact_files = [
+        "model.pt",
+        "candidate_embeddings.npy",
+        "candidate_metadata.parquet",
+    ]
+    if tokenizer_path is not None:
+        artifact_files.append("tokenizer.json")
     manifest = {
         "version": 1,
         "solution": "two_tower_v2_walk_forward_snapshot",
@@ -271,11 +309,7 @@ def export_snapshot(
         "candidates": candidates,
         "files": {
             name: {"bytes": (artifact_dir / name).stat().st_size}
-            for name in (
-                "model.pt",
-                "candidate_embeddings.npy",
-                "candidate_metadata.parquet",
-            )
+            for name in artifact_files
         },
     }
     atomic_json(artifact_dir / "manifest.json", manifest)

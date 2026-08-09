@@ -34,9 +34,11 @@ def main() -> int:
     args = arguments()
     cfg = load_config(args.config.resolve())
     sys.path.insert(0, str(cfg.paths.step2_root))
-    from two_tower_v2.data import YtTableSource
+    from two_tower_v2.data import YtTableSource, source_fields
     from two_tower_v2.training import (
+        all_cardinalities,
         atomic_json,
+        copy_tokenizer_artifact,
         export_candidates,
         git_sha,
         resolve_device,
@@ -58,13 +60,20 @@ def main() -> int:
     )
     resolved = OmegaConf.to_yaml(cfg, resolve=True)
     (artifact_dir / "config.resolved.yaml").write_text(resolved, encoding="utf-8")
+    tokenizer_path = copy_tokenizer_artifact(cfg, artifact_dir)
     strict_chronological = bool(cfg.training.get("strict_chronological", False))
+    fields = source_fields(all_cardinalities(cfg))
     source = YtTableSource(
         str(cfg.paths.train_table),
         str(cfg.paths.proxy),
         ordered=strict_chronological,
+        fields=fields,
     )
-    validation = YtTableSource(str(cfg.paths.validation_table), str(cfg.paths.proxy))
+    validation = YtTableSource(
+        str(cfg.paths.validation_table),
+        str(cfg.paths.proxy),
+        fields=fields,
+    )
     device = resolve_device(str(cfg.runtime.device))
     tracking_cfg = cfg.get("tracking", {}).get("underdeep", {})
     tracker = UnderdeepTracker(
@@ -97,6 +106,13 @@ def main() -> int:
             device=device,
         )
         config_sha = hashlib.sha256(resolved.encode("utf-8")).hexdigest()
+        artifact_files = [
+            "model.pt",
+            "candidate_embeddings.npy",
+            "candidate_metadata.parquet",
+        ]
+        if tokenizer_path is not None:
+            artifact_files.append("tokenizer.json")
         manifest = {
             "version": 1,
             "solution": str(cfg.experiment.name),
@@ -108,11 +124,7 @@ def main() -> int:
                 name: {
                     "bytes": (artifact_dir / name).stat().st_size,
                 }
-                for name in (
-                    "model.pt",
-                    "candidate_embeddings.npy",
-                    "candidate_metadata.parquet",
-                )
+                for name in artifact_files
             },
         }
         metrics = {"training": training, "candidates": candidates}

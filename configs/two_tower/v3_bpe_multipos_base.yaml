@@ -1,0 +1,40 @@
+extends: v2_dcn4_mlp3_full.yaml
+
+experiment:
+  name: two_tower_v3_bpe_multipos
+
+paths:
+  tokenizer_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_bpe16k/tokenizer.json
+
+tracking:
+  underdeep:
+    run_name: two-tower-v3-bpe-multipos
+
+model:
+  query_cardinalities:
+    query_bpe_ids: 16384
+    query_region_ids: 65536
+  banner_cardinalities:
+    title_bpe_ids: 16384
+    text_bpe_ids: 16384
+  hidden_dim: 384
+  output_dim: 96
+  cross_layers: 4
+  deep_layers: 3
+  deep_residual: true
+
+text_features:
+  limits:
+    query_bpe_ids: 48
+    title_bpe_ids: 48
+    text_bpe_ids: 96
+
+training:
+  objective: multi_positive
+  symmetric_weight: 1.0
+  temperature: 0.05
+  batch_size: 1024
+  strict_chronological: true
+  shuffle_buffer: 1
+  validate_every_rows: 2000000
+  log_every: 250

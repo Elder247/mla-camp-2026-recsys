@@ -1,0 +1,18 @@
+paths:
+  proxy: kolmogorov
+  step2_root: /home/astrofimuk/workspace/step2_ce
+  corpus_table: //home/bm/users/argus/mla/steps/step5_bpe_dcn/bpe_corpus_10m
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_bpe16k
+
+tracking:
+  underdeep:
+    enabled: true
+    project: camp-2026
+    experiment: modern-plumber
+    run_name: two-tower-bpe16k
+    finish_timeout_seconds: 30
+
+tokenizer:
+  vocab_size: 16384
+  min_frequency: 2
+  batch_texts: 4096

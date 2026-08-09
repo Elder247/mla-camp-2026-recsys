@@ -62,7 +62,8 @@ def main() -> int:
     cfg = load_config(args.config.resolve())
     sys.path.insert(0, str(cfg.paths.step2_root))
     from common.yt_data import make_client
-    from two_tower_v2.training import atomic_json
+    from two_tower_v2.data import source_fields
+    from two_tower_v2.training import all_cardinalities, atomic_json
     from yql.api.v1.client import YqlClient
     from yql.client.explain import YqlSqlValidateRequest
 
@@ -82,7 +83,7 @@ def main() -> int:
             if client.exists(f"{target}/@sorted_by")
             else []
         )
-        required = {"week_start", "show_time", "query_word_ids", "banner_id_ids"}
+        required = {"week_start", "show_time", *source_fields(all_cardinalities(cfg))}
         if required <= set(schema) and sorted_by[:1] == ["week_start"]:
             report = {
                 "version": 1,

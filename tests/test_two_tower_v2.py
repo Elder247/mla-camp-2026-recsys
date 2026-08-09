@@ -10,8 +10,9 @@ torch = pytest.importorskip("torch")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from two_tower_v2.data import pack_bags, yt_read_options  # noqa: E402
+from two_tower_v2.data import enrich_rows, pack_bags, source_fields, yt_read_options  # noqa: E402
 from two_tower_v2.model import TwoTowerV2, embedding_dimension  # noqa: E402
+from two_tower_v2.training import positive_mask, retrieval_objective  # noqa: E402
 from scripts.train_two_tower_v2 import load_config  # noqa: E402
 
 
@@ -119,3 +120,81 @@ def test_10m_order_probe_changes_only_the_stream_policy() -> None:
     assert chronological.training.shuffle_buffer == 1
     assert not shuffled.training.strict_chronological
     assert shuffled.training.shuffle_buffer == 20000
+
+
+def test_bpe_and_query_region_features_are_derived_in_batch() -> None:
+    class Encoding:
+        def __init__(self, ids):
+            self.ids = ids
+
+    class Tokenizer:
+        def encode_batch(self, texts):
+            return [Encoding([len(text), 17, 19]) for text in texts]
+
+    cardinalities = {
+        "query_word_ids": 32,
+        "region_ids": 32,
+        "query_bpe_ids": 16,
+        "query_region_ids": 64,
+    }
+    rows = enrich_rows(
+        [
+            {
+                "query_word_ids": [2, 3],
+                "region_ids": [5],
+                "query_text": "hello",
+            }
+        ],
+        cardinalities=cardinalities,
+        tokenizer=Tokenizer(),
+        bpe_limits={"query_bpe_ids": 2},
+    )
+    assert rows[0]["query_bpe_ids"] == [5, 1]
+    assert rows[0]["query_region_ids"] == [35, 60]
+    assert source_fields(cardinalities)[-3:] == (
+        "query_text",
+        "title_text",
+        "text_text",
+    )
+
+
+def test_multi_positive_loss_does_not_treat_duplicate_clicks_as_negatives() -> None:
+    rows = [
+        {"query_word_ids": [1], "region_ids": [4], "banner_id_ids": [8]},
+        {"query_word_ids": [1], "region_ids": [4], "banner_id_ids": [9]},
+        {"query_word_ids": [2], "region_ids": [4], "banner_id_ids": [8]},
+    ]
+    logits = torch.tensor(
+        [[5.0, 4.0, 3.0], [4.0, 5.0, 0.0], [3.0, 0.0, 5.0]],
+        requires_grad=True,
+    )
+    mask = positive_mask(rows, device=torch.device("cpu"))
+    assert mask.tolist() == [
+        [True, True, True],
+        [True, True, False],
+        [True, False, True],
+    ]
+    loss, returned = retrieval_objective(
+        logits,
+        rows,
+        objective="multi_positive",
+        symmetric_weight=1.0,
+    )
+    assert torch.equal(mask, returned)
+    assert torch.isfinite(loss)
+    loss.backward()
+
+
+def test_v3_config_adds_bpe_capacity_without_changing_old_config() -> None:
+    old = load_config(ROOT / "configs" / "two_tower" / "v2_dcn4_mlp3_full.yaml")
+    new = load_config(
+        ROOT / "configs" / "two_tower" / "v3_bpe_multipos_chrono_10m.yaml"
+    )
+    assert "query_bpe_ids" not in old.model.query_cardinalities
+    assert new.model.query_cardinalities.query_bpe_ids == 16384
+    assert new.model.query_cardinalities.query_region_ids == 65536
+    assert new.model.banner_cardinalities.title_bpe_ids == 16384
+    assert new.training.objective == "multi_positive"
+    assert new.training.symmetric_weight == 1.0
+    assert new.training.batch_size == 1024
+    assert new.model.deep_residual
