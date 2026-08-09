@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from mla_recsys.artifacts import (  # noqa: E402
@@ -223,6 +224,11 @@ def main() -> int:
     parser.add_argument("--decision", type=Path, required=True)
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--direct-run-id")
+    parser.add_argument(
+        "--direct-only",
+        action="store_true",
+        help="Materialize the optional direct submission and skip OOF training",
+    )
     parser.add_argument("--runs", type=Path)
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--immutable-artifacts", type=Path)
@@ -291,6 +297,17 @@ def main() -> int:
                     "error": str(error),
                 }
             atomic_write_json(args.decision, decision)
+            if args.direct_only:
+                if decision["direct_submission"].get("status") != "completed":
+                    raise RuntimeError(
+                        "Direct TwoTower submission failed: "
+                        f"{decision['direct_submission'].get('error')}"
+                    )
+                decision.update(status="completed", finished_at=utc_now())
+                atomic_write_json(args.decision, decision)
+                return 0
+        elif args.direct_only:
+            parser.error("--direct-run-id is required with --direct-only")
         artifact = Path(variant["artifact"])
         manifest = artifact / "manifest.json"
         if not manifest.is_file():
