@@ -222,3 +222,31 @@ scp astrofimuk@astrofimuk.ml-camp.ws.deep.yandex.net:\
 The form accepts a Parquet file up to 64 MiB with `HitLogID` and `BannerID`.
 Use the immutable full run ID as the submission name and record the returned
 SC Recall@50/Recall@50 in `docs/plan.md` before starting the next hypothesis.
+
+## Ranker-only and history-feature reuse
+
+For a loss or tree-count hypothesis, materialize a new run from a completed
+temporal donor. The command fails unless upstream resolved config semantics and
+the donor parity contract match:
+
+```bash
+python scripts/materialize_ranker_probe.py \
+  --donor /home/astrofimuk/workspace/mla_two_stage/runs/<completed-temporal> \
+  experiment=i2_walk_forward_100m_s10_fast_quality \
+  run_id=<new-ranker-run> mode=offline scope=offline \
+  candidates.reuse_run=/home/astrofimuk/workspace/mla_two_stage/runs/<completed-temporal> \
+  features.reuse_run=/home/astrofimuk/workspace/mla_two_stage/runs/<completed-temporal> \
+  ranker.version=<version> ranker.loss_function=QueryRMSE
+python scripts/run_pipeline.py \
+  experiment=i2_walk_forward_100m_s10_fast_quality \
+  run_id=<new-ranker-run> mode=offline scope=offline \
+  candidates.reuse_run=/home/astrofimuk/workspace/mla_two_stage/runs/<completed-temporal> \
+  features.reuse_run=/home/astrofimuk/workspace/mla_two_stage/runs/<completed-temporal> \
+  ranker.version=<version> ranker.loss_function=QueryRMSE
+```
+
+For a full run that must recompute merge and only the changed history columns,
+use `--profile history_features`, set `features.reuse_history_patch=true`, and
+then launch the same resolved full config. This profile reuses data, counters
+and individual source candidates, but deliberately does not reuse merged or
+feature parquet.

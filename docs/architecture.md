@@ -70,6 +70,13 @@ Each parquet/model has an adjacent output manifest containing config/input
 fingerprints, schema, row count, size and content fingerprint. Resume requires
 all expected fields and an existing output to match.
 
+Ranker-only experiments may use `materialize_ranker_probe.py`. Reuse is not a
+blind directory copy: the donor must be completed, cache parity must be green,
+and the normalized upstream config must be identical. Files are hardlinked
+with a copy fallback and every synthetic completed stage records
+`reused_from`. The `history_features` profile stops at source candidates so a
+changed merge/history contract is recomputed and validated before training.
+
 The orchestrator creates one UnderDeep run in project `camp-2026`, experiment
 `modern-plumber`. Stage wall/RSS values, temporal candidate/ranker metrics and
 the configured top native CatBoost importances are uploaded.

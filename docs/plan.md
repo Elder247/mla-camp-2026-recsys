@@ -373,3 +373,56 @@ Bounded SourceCost geometry temporal decision:
   `0.3650` at `2026-08-09 03:44:08 MSK`. The `+0.13 pp` private SC gain is
   accepted, but its small size rules out geometry-only tuning as the path to
   `0.65`; the next experiment targets strict chronology/history retrieval.
+
+History aggregate fix and cached loss decision (`20260809_0500_i2_history_features_temporal`):
+
+- temporal history aliases now preserve click count and summed SourceCost in
+  the common merged contract. On sampled train/holdout feature partitions the
+  two numeric history fields are non-zero for about 15% of rows; native
+  CatBoost importance also confirms that the signal is used;
+- the 100M control completed in about 24 minutes. The corrected YetiRank model
+  reaches CatBoost/blend/geometry SC Recall@50
+  `0.637776/0.643585/0.646101`; the `+0.004 pp` geometry change is treated as
+  noise and is not promoted by itself;
+- the safe feature patch path reuses an exact donor only after row count,
+  request/banner identity, schema and manifest validation. It replaces only
+  four history columns, preserves Arrow nullability, and passed a real
+  292,500-row parquet smoke plus the complete test suite;
+- experiment sizing is now progressive: `1M` is a code smoke, `10M` is the
+  default gate for new candidate/feature hypotheses, and `100M` is reserved
+  for confirmation. When exact 100M features already exist, ranker-only probes
+  reuse them because this is both faster and less noisy than rebuilding 10M.
+
+Ranker-only loss probes and runtime contract:
+
+- `materialize_ranker_probe.py` validates a completed donor, successful cache
+  parity and equality of every upstream semantic config field before
+  hardlinking immutable data/candidates/features. It records all reused stages
+  with zero wall time and retains donor provenance; changed feature/candidate
+  semantics fail closed;
+- two full 100M temporal losses then completed sequentially, including both
+  blend probes, in roughly five minutes. QuerySoftMax trained in `72s` and
+  reached geometry SC Recall@50 `0.649355`;
+- QueryRMSE trained in `44s`, selected 185 trees and reached CatBoost/blend/
+  geometry SC Recall@50 `0.623318/0.647522/0.649637`. Its geometry result is
+  `+0.35 pp` above the previous honest best `0.646101`, so QueryRMSE is the
+  accepted loss for promotion. No broad loss/Optuna search was run.
+
+Fast QueryRMSE full/private evidence (`20260809_0450_i2_qrmse_full`):
+
+- the `history_features` reuse profile hardlinked validated full data,
+  counters and ten source-candidate stages from the fixed-history donor. It
+  recomputed merge and parity, then patched all `32/32` full-train and `32/32`
+  test feature partitions instead of rebuilding 19.5M feature rows;
+- the full run completed from `04:47:24` to `04:55:37 MSK` (`8m13s`). Merge
+  took `149/95s`, parity `214s`, feature refresh `35/21s`, the single 185-tree
+  QueryRMSE fit `42s`, and submission inference/validation `32/1s`;
+- parity passed `40/40` with zero mismatches. Feature schemas contain
+  `11,999,250/7,500,000` rows; `history_click_count_log1p` is the ninth most
+  important native CatBoost feature (`2.94` importance);
+- strict submission validation passed 10,000 rows with exactly 50 indexed,
+  unique banners per request. The immutable 2.76 MB artifact SHA-256 is
+  `f8380a30c475f06291e0b5c277ff6962f59474606a58ae574fa2b22130a8debe`;
+- leaderboard upload `wf100m qrmse history geometry` at `04:57:58 MSK` scored
+  SC Recall@50 `0.6206`, Recall@50 `0.5079` and Recall@10 `0.3647`. It is the
+  new accepted personal best (`+0.22 pp` SC over `0.6184`).

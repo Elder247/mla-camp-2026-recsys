@@ -38,3 +38,6 @@ These invariants are review blockers.
 15. The frozen banner index defines the item universe. Every generator filters
     historical observations to that index before ranking, so offline and full
     scopes cannot emit an item that submission cannot resolve.
+16. Cross-run stage materialization requires a completed donor, green parity
+    and an exact upstream semantic-config match. Ranker-only reuse must not
+    silently carry merged/features across a changed history contract.
