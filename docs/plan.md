@@ -915,3 +915,24 @@ Fast logQ context screens and bounded ensemble (2026-08-09):
   `+0.000668/+0.000619`, below the global blend's
   `+0.001232/+0.003292`; the conditional branch is rejected to keep inference
   simple.
+- the complete unit suite passed `183/183` after the bounded and conditional
+  tuner changes;
+- a previously trained 100M BPE/multi-positive v3 tower remained highly
+  complementary to the accepted proxy. A `0.75/0.25` RRF-0 mixture with
+  SourceCost exponent `0.05` improved early/late/full temporal SC Recall@50 by
+  `+0.001748/+0.003950/+0.002760`, the strongest cached gate in this series.
+  Its strict 10,000-by-50 submission has full SHA-256
+  `40c0677711f2101db682662a8a9af77c1aeed0730776519a912ddba6da22de9f`
+  and is queued for private evaluation after YT recovery.
+- three additional cached pools were screened against the accepted proxy.
+  SourceCost-weighted v4 100M improved early/late SC@50 by
+  `+0.001095/+0.000718`, metadata v5 added nothing, and device/age/gender
+  context v6 improved them by `+0.000797/+0.002408`;
+- a broad accepted/v3/v6 grid overfit the early split and was rejected. Five
+  fixed neighbours around the stable v3 solution were then evaluated without
+  further parameter selection. The winner uses weights `0.75/0.20/0.05`, RRF
+  constant `0`, SourceCost exponent `0.05`, and top `75`; its early/late/full
+  gains are `+0.002364/+0.003860/+0.003051`. The strict output SHA-256 is
+  `e2fa9f5792470bad481707b15112a54ae9c8c0fe7760e663f3a3123a740a058f`
+  and it supersedes the v3-only file as the first candidate to score when YT
+  recovers.
