@@ -100,3 +100,7 @@ submission:
   blend:
     method: rank_linear
     catboost_weight: 1.0
+  value_geometry:
+    source_cost_scale: 1000000.0
+    exponent: 0.0
+    rerank_top_n: 100

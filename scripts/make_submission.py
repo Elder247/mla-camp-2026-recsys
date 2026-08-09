@@ -22,7 +22,10 @@ from mla_recsys.artifacts import (  # noqa: E402
 from mla_recsys.command import load_stage_context  # noqa: E402
 from mla_recsys.config import config_fingerprint  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
-from mla_recsys.rank_blend import rank_linear_order  # noqa: E402
+from mla_recsys.rank_blend import (  # noqa: E402
+    rank_linear_order,
+    rank_value_geometric_order,
+)
 
 
 def matrix(table: pa.Table, names: list[str]) -> np.ndarray:
@@ -57,6 +60,7 @@ def catboost_predictions(
     run_path: Path,
     *,
     blend_weight: float | None = None,
+    value_geometry: dict[str, float | int] | None = None,
 ) -> tuple[dict[str, tuple[int, list[int]]], list[Path]]:
     metadata = json.loads(
         (run_path / "models" / "catboost.json").read_text(encoding="utf-8")
@@ -67,28 +71,38 @@ def catboost_predictions(
     predictions: dict[str, tuple[int, list[int]]] = {}
     paths = sorted((run_path / "features" / "test").glob("part-*.parquet"))
     for path in paths:
-        table = pq.read_table(
-            path,
-            columns=["request_id", "hit_log_id", "banner_id", "pre_rank", *names],
-        )
+        columns = ["request_id", "hit_log_id", "banner_id", "pre_rank", *names]
+        if value_geometry is not None:
+            columns.append("source_cost_raw")
+        table = pq.read_table(path, columns=list(dict.fromkeys(columns)))
         if table.num_rows == 0:
             continue
         scores = model.predict(matrix(table, names))
-        rows = table.select(
-            ["request_id", "hit_log_id", "banner_id", "pre_rank"]
-        ).to_pylist()
-        grouped: dict[str, list[tuple[float, int, int, int]]] = {}
+        selected = ["request_id", "hit_log_id", "banner_id", "pre_rank"]
+        if value_geometry is not None:
+            selected.append("source_cost_raw")
+        rows = table.select(selected).to_pylist()
+        grouped: dict[str, list[tuple]] = {}
         for row, score in zip(rows, scores):
-            grouped.setdefault(str(row["request_id"]), []).append(
-                (
-                    float(score),
-                    int(row["pre_rank"]),
-                    int(row["banner_id"]),
-                    int(row["hit_log_id"]),
-                )
+            value = (
+                float(score),
+                int(row["pre_rank"]),
+                int(row["banner_id"]),
+                int(row["hit_log_id"]),
             )
+            if value_geometry is not None:
+                value = (*value, float(row["source_cost_raw"]))
+            grouped.setdefault(str(row["request_id"]), []).append(value)
         for request_id, values in grouped.items():
-            if blend_weight is None:
+            if value_geometry is not None:
+                values = rank_value_geometric_order(
+                    values,
+                    catboost_weight=float(value_geometry["catboost_weight"]),
+                    source_cost_scale=float(value_geometry["source_cost_scale"]),
+                    exponent=float(value_geometry["exponent"]),
+                    rerank_top_n=int(value_geometry["rerank_top_n"]),
+                )
+            elif blend_weight is None:
                 values.sort(key=lambda value: (-value[0], value[1], value[2]))
             else:
                 values = rank_linear_order(values, catboost_weight=blend_weight)
@@ -113,6 +127,18 @@ def main() -> int:
         predictions, prediction_inputs = catboost_predictions(
             context.store.path,
             blend_weight=float(cfg.submission.blend.catboost_weight),
+        )
+    elif ranking == "value_geometry":
+        predictions, prediction_inputs = catboost_predictions(
+            context.store.path,
+            value_geometry={
+                "catboost_weight": float(cfg.submission.blend.catboost_weight),
+                "source_cost_scale": float(
+                    cfg.submission.value_geometry.source_cost_scale
+                ),
+                "exponent": float(cfg.submission.value_geometry.exponent),
+                "rerank_top_n": int(cfg.submission.value_geometry.rerank_top_n),
+            },
         )
     else:
         raise ValueError(f"Unsupported submission ranking: {ranking}")
@@ -139,7 +165,7 @@ def main() -> int:
     with atomic_output_path(output) as temporary:
         pq.write_table(table, temporary, compression="zstd")
     inputs = [fingerprint_file(path) for path in prediction_inputs]
-    if ranking in {"catboost", "blend"}:
+    if ranking in {"catboost", "blend", "value_geometry"}:
         inputs.insert(0, fingerprint_file(context.store.path / "models" / "catboost.cbm"))
     write_output_manifest(
         output,
@@ -158,6 +184,15 @@ def main() -> int:
         "max_items": max(len(row["BannerID"]) for row in rows),
         "ranking": ranking,
     }
+    if ranking == "value_geometry":
+        report["value_geometry"] = {
+            "catboost_weight": float(cfg.submission.blend.catboost_weight),
+            "source_cost_scale": float(
+                cfg.submission.value_geometry.source_cost_scale
+            ),
+            "exponent": float(cfg.submission.value_geometry.exponent),
+            "rerank_top_n": int(cfg.submission.value_geometry.rerank_top_n),
+        }
     atomic_write_json(context.store.path / "metrics" / "submission.json", report)
     print(json.dumps(report, indent=2))
     return 0

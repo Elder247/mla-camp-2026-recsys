@@ -335,3 +335,41 @@ SourceCost group-weight decision (`20260809_0345_i2_scgw_temporal`):
 - UnderDeep is active at `camp-2026/modern-plumber`: candidate/ranker metrics,
   primary SC, timings, peak memory, submission checks and native CatBoost
   importance are backed up locally and sent fail-open without reading tokens.
+
+Fixed-history 100M full/private evidence (`20260809_0410_i2_scgw_fixed_full`):
+
+- the full run used the accepted unweighted temporal model, 482 CatBoost trees
+  and the selected `0.6 CatBoost / 0.4 RRF` blend; despite the legacy run id,
+  the resolved config records experiment `i2_walk_forward_100m_s10_fast_quality`;
+- frozen test history is now present for all 10,000 requests: query,
+  query-region and global generators emitted `424,118`, `72,797` and `750,000`
+  rows. Temporal cache parity passed `40/40` checks with zero mismatches;
+- the end-to-end cached full run took `22m35s`. Parallel parity took `207s`,
+  feature construction took `613/472s` for `11,999,250/7,500,000` train/test
+  rows, the single full CatBoost fit took `136s`, and submission inference plus
+  validation took `29s`;
+- strict validation passed 10,000 rows with exactly 50 candidates per request.
+  The 2.6 MB artifact SHA-256 is
+  `0d6a9e0d5d09c09182a7c800912feba2e861006fff804b53e80ee85e1350e05b`;
+- the leaderboard submission at `2026-08-09 03:38:39 MSK` scored SC Recall@50
+  `0.6171`, Recall@50 `0.5096` and Recall@10 `0.3673`. This is a new personal
+  best, `+3.35 pp` SC over Iteration 0, but remains below the `0.65` target;
+- the next cheap hypothesis applies a bounded SourceCost geometry only inside
+  the accepted rank order's prefix. It is tuned on the existing temporal
+  holdout and does not regenerate candidates/features or refit CatBoost.
+
+Bounded SourceCost geometry temporal decision:
+
+- a 37-combination cached grid completed in `30.2s` on all 3,500 temporal
+  requests. The best `0.6` blend with exponent `0.15` inside only the top 75
+  improves SC Recall@50 from `0.643664` to `0.646060` (`+0.24 pp`), with
+  Recall@50 `0.538703`;
+- the hypothesis passes the honest temporal gate and is materialized as a new
+  immutable prediction variant. The accepted blend submission is retained
+  unchanged for direct private comparison.
+- the strict 10,000 x 50 variant (SHA-256
+  `33585c7f2f16ab58a6aa1f0e4e2908142bf6478ed3b71508903c2ae21bf57477`)
+  scored private SC Recall@50 `0.6184`, Recall@50 `0.5053` and Recall@10
+  `0.3650` at `2026-08-09 03:44:08 MSK`. The `+0.13 pp` private SC gain is
+  accepted, but its small size rules out geometry-only tuning as the path to
+  `0.65`; the next experiment targets strict chronology/history retrieval.
