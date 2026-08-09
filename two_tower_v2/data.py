@@ -96,16 +96,17 @@ class YtTableSource:
         columns = {str(item["name"]) for item in schema}
         self.columns = columns
         self.fields = tuple(fields or ALL_FIELDS)
-        missing = set(self.fields) - columns
+        missing = set(self.fields) - columns - set(NUMERIC_SOURCE_FIELDS)
         if missing:
             raise ValueError(f"YT table {table} misses fields: {sorted(missing)}")
+        self.read_fields = tuple(name for name in self.fields if name in columns)
         order = "chronological" if self.ordered else "parallel"
         self.description = f"YT {proxy}:{table} ({order})"
 
     def rows(self) -> Iterator[dict[str, Any]]:
         import yt.wrapper as yt
 
-        path = yt.TablePath(self.table, columns=list(self.fields))
+        path = yt.TablePath(self.table, columns=list(self.read_fields))
         for raw in self.client.read_table(
             path,
             **yt_read_options(ordered=self.ordered),
@@ -148,7 +149,7 @@ class YtWeekTableSource(YtTableSource):
         fraction = float(sample_fraction)
         if not 0.0 < fraction <= 1.0:
             raise ValueError("sample fraction must be in (0, 1]")
-        columns = list(self.fields)
+        columns = list(self.read_fields)
         if fraction < 1.0:
             if "uniq_id" not in self.columns:
                 raise ValueError(
