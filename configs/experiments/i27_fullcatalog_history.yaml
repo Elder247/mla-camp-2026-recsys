@@ -1,0 +1,46 @@
+experiment:
+  name: i27_fullcatalog_history
+  description: Causal 100M query history without the frozen 1M item-universe filter
+
+pipeline:
+  max_parallel_cg: 1
+  max_wall_seconds: 1800
+
+paths:
+  root: /home/astrofimuk/workspace/mla_two_stage_accel
+  runs: /home/astrofimuk/workspace/mla_two_stage/runs
+  cache: /home/astrofimuk/workspace/mla_two_stage/cache
+  immutable_artifacts: /home/astrofimuk/workspace/mla_two_stage/artifacts
+  fullcatalog_history_events: ${paths.immutable_artifacts}/two_tower_v2_walk_forward_100m_s10_chrono_final_v2/history_events.parquet
+
+candidates:
+  temporal_restrict_to_banner_index: false
+  rrf_constant: 20.0
+  union_max_candidates: 800
+  ranker_pool: 800
+  generators:
+    history_query_sc_oof_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: history_query_sc_fullcatalog
+      quota: 500
+      top_k: 500
+      weight: 1.0
+      min_clicks: 1
+      bayes_prior: 0.0
+      score_mode: source_cost
+      external_events_path_key: fullcatalog_history_events
+    history_query_region_oof_v1:
+      enabled: true
+      kind: temporal_history
+      feature_name: history_query_region_sc_fullcatalog
+      quota: 300
+      top_k: 300
+      weight: 1.0
+      min_clicks: 1
+      bayes_prior: 0.0
+      score_mode: source_cost
+      external_events_path_key: fullcatalog_history_events
+
+evaluation:
+  complementarity_baseline_sources: []
