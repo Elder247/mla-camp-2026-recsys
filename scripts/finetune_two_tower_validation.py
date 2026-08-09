@@ -122,6 +122,9 @@ def main() -> int:
     if tokenizer_source.is_file():
         shutil.copy2(tokenizer_source, artifact_dir / TOKENIZER_FILENAME)
         model_cfg.paths.tokenizer_file = str(artifact_dir / TOKENIZER_FILENAME)
+    inference_source = base_artifact / "inference_config.json"
+    if inference_source.is_file():
+        shutil.copy2(inference_source, artifact_dir / inference_source.name)
     tokenizer = load_bpe_tokenizer(model_cfg, artifact_dir=artifact_dir)
     global_banner_prior = load_global_banner_prior(
         model_cfg,
@@ -405,6 +408,8 @@ def main() -> int:
         files = [MODEL_FILENAME, EMBEDDINGS_FILENAME, METADATA_FILENAME]
         if (artifact_dir / TOKENIZER_FILENAME).is_file():
             files.append(TOKENIZER_FILENAME)
+        if (artifact_dir / "inference_config.json").is_file():
+            files.append("inference_config.json")
         report = {
             "version": 1,
             "solution": str(cfg.experiment.name),

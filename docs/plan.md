@@ -1017,3 +1017,15 @@ YT recovery, private scoring and next direct TwoTower gate (2026-08-09):
   `0.293`; v17 adds 61 unique hits versus 34 in the reverse direction;
 - v17 therefore passes the 10M retrieval gate by a wide margin. One matching
   100M prior and fit are promoted; no other heavy model runs in parallel.
+- a bounded cached inference test restores a small fraction of the train item
+  prior after retrieval: `adjusted_score = dot_product + 0.05 * log(count)`
+  over the top-100 head. The coefficient was selected on the earlier temporal
+  half and independently improves the later half. SC@50 gains are
+  `+0.007710/+0.023270/+0.014861` for early/late/full, while Recall@50 rises
+  from `0.502999` to `0.516710` overall; alpha `0.05` also remains optimal in
+  the fixed `0.05..0.20` boundary refinement;
+- the accepted restore is implemented as a small validated inference sidecar:
+  it pins the train-prior manifest SHA, aligns counts to the 1M banner index by
+  sorted ids, records coverage, and is propagated unchanged into validation
+  full-fit artifacts. It changes no training labels or candidate membership
+  based on targets. Tests pass `193/193` after the addition.

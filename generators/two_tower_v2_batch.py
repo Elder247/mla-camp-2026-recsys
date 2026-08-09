@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +15,80 @@ from two_tower_v2.training import (
     MODEL_FILENAME,
     bpe_limits,
     build_model,
+    file_sha256,
     load_bpe_tokenizer,
 )
 
 
 SOLUTION_NAME = "two_tower_v2_dcn4_mlp3"
+INFERENCE_CONFIG_FILENAME = "inference_config.json"
+
+
+def load_logq_restore_bias(
+    artifact_dir: Path,
+    *,
+    candidate_metadata: dict[str, list[Any]],
+    device: torch.device,
+    dtype: torch.dtype,
+) -> tuple[torch.Tensor | None, dict[str, Any] | None]:
+    """Load a validated, train-only item-prior bias aligned to the index."""
+
+    config_path = artifact_dir / INFERENCE_CONFIG_FILENAME
+    if not config_path.is_file():
+        return None, None
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if int(config.get("version", 0)) != 1:
+        raise ValueError("unsupported TwoTower inference config version")
+    if config.get("kind") != "global_banner_logq_restore":
+        raise ValueError("unsupported TwoTower inference transform")
+    alpha = float(config.get("alpha", 0.0))
+    if not -1.0 <= alpha <= 1.0:
+        raise ValueError("logQ restore alpha must be in [-1, 1]")
+    unseen_count = float(config.get("unseen_count", 1.0))
+    if unseen_count <= 0.0:
+        raise ValueError("logQ restore unseen_count must be positive")
+    prior_dir = Path(str(config["prior_dir"]))
+    manifest_path = prior_dir / "manifest.json"
+    expected_manifest_sha = str(config.get("prior_manifest_sha256", ""))
+    if not manifest_path.is_file() or not expected_manifest_sha:
+        raise FileNotFoundError("validated logQ prior manifest is unavailable")
+    if file_sha256(manifest_path) != expected_manifest_sha:
+        raise ValueError("logQ prior manifest SHA-256 mismatch")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("kind") != "global_banner_frequency":
+        raise ValueError("unexpected logQ prior kind")
+    prior_file = prior_dir / str(manifest["file"]["name"])
+    if file_sha256(prior_file) != str(manifest["file"]["sha256"]):
+        raise ValueError("logQ prior data SHA-256 mismatch")
+
+    import pyarrow.parquet as pq
+
+    prior = pq.read_table(prior_file, columns=["banner_id", "count"])
+    prior_ids = np.asarray(
+        prior["banner_id"].combine_chunks().to_numpy(), dtype=np.uint64
+    )
+    prior_counts = np.asarray(
+        prior["count"].combine_chunks().to_numpy(), dtype=np.float64
+    )
+    if prior_ids.size == 0 or np.any(prior_ids[1:] <= prior_ids[:-1]):
+        raise ValueError("logQ prior ids must be strictly increasing")
+    candidate_ids = np.asarray(candidate_metadata["banner_id"], dtype=np.uint64)
+    positions = np.searchsorted(prior_ids, candidate_ids)
+    safe_positions = np.minimum(positions, prior_ids.size - 1)
+    matched = (positions < prior_ids.size) & (
+        prior_ids[safe_positions] == candidate_ids
+    )
+    counts = np.full(candidate_ids.shape, unseen_count, dtype=np.float64)
+    counts[matched] = prior_counts[safe_positions[matched]]
+    values = (alpha * np.log(counts)).astype(np.float32)
+    bias = torch.from_numpy(values).to(device=device, dtype=dtype)
+    return bias, {
+        "kind": "global_banner_logq_restore",
+        "alpha": alpha,
+        "prior_dir": str(prior_dir),
+        "candidate_coverage": float(matched.mean()),
+        "candidate_misses": int((~matched).sum()),
+    }
 
 
 def input_schema() -> list[dict[str, Any]]:
@@ -87,17 +157,25 @@ def load_model(
     )
     if len(metadata["banner_id"]) != candidate_vectors.shape[0]:
         raise ValueError("candidate metadata and embeddings have different sizes")
+    candidate_logq_bias, inference = load_logq_restore_bias(
+        artifact_dir,
+        candidate_metadata=metadata,
+        device=device,
+        dtype=candidate_vectors.dtype,
+    )
     return {
         "network": network,
         "config": config,
         "device": device,
         "candidate_vectors": candidate_vectors,
         "candidate_metadata": metadata,
+        "candidate_logq_bias": candidate_logq_bias,
         "tokenizer": tokenizer,
         "metadata": {
             "solution": SOLUTION_NAME,
             "candidates": candidate_vectors.shape[0],
             "training": checkpoint.get("training", {}),
+            "inference": inference,
         },
     }
 
@@ -163,17 +241,25 @@ def rank_batch(
         scores = query_vectors.to(model["candidate_vectors"].dtype) @ model[
             "candidate_vectors"
         ].T
+        if model.get("candidate_logq_bias") is not None:
+            scores = scores + model["candidate_logq_bias"].unsqueeze(0)
         count = min(top_k, scores.shape[1])
         values, indices = torch.topk(scores, k=count, dim=1)
+        selected_bias = (
+            model["candidate_logq_bias"][indices]
+            if model.get("candidate_logq_bias") is not None
+            else torch.zeros_like(values)
+        )
     metadata = model["candidate_metadata"]
     output: list[list[dict[str, Any]]] = []
-    for tokens, score_row, index_row in zip(
+    for tokens, score_row, index_row, bias_row in zip(
         token_rows,
         values.float().cpu().tolist(),
         indices.cpu().tolist(),
+        selected_bias.float().cpu().tolist(),
     ):
         ranked = []
-        for score, index in zip(score_row, index_row):
+        for score, index, logq_bias in zip(score_row, index_row, bias_row):
             title = metadata["title"][index] or ""
             text = metadata["text"][index] or ""
             candidate_tokens = set(tokenize(title)) | set(tokenize(text))
@@ -185,7 +271,10 @@ def rank_batch(
                     "url": metadata["url"][index] or "",
                     "source_cost": float(metadata["source_cost"][index] or 0.0),
                     "score": float(score),
-                    "contributions": {"dot_product": float(score)},
+                    "contributions": {
+                        "dot_product": float(score - logq_bias),
+                        "logq_restore": float(logq_bias),
+                    },
                     "matched_tokens": [token for token in tokens if token in candidate_tokens],
                 }
             )
