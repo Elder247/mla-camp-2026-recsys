@@ -1041,3 +1041,32 @@ YT recovery, private scoring and next direct TwoTower gate (2026-08-09):
   the proxy control are `+0.013332` on the earlier half and `+0.001292` on the
   later half (`+0.007799` overall), so the full 100M downstream gate remains
   justified without weakening the two-half acceptance rule.
+
+v17 exact global logQ 100M result (2026-08-10):
+
+- the promoted fit completed over `21,813,184` rows in `2,953.4s` at
+  `7,385.7 rows/s`; YT wait was only `2.40%`, peak GPU memory `8.23GB`, and
+  the one-million-banner float16 export took `112.5s`;
+- exact global banner-frequency logQ improved the otherwise matching v16
+  100M model from Recall/SC@50 `0.541274/0.630933` to
+  `0.600400/0.660013`. Recall/SC@500 also improved from
+  `0.657241/0.726149` to `0.664953/0.736874`. At top 50 it added 24 unique
+  hits with `0.9165%` of total SourceCost versus one reverse-only hit;
+- the two-half direct gate accepted a blend of the existing private-best
+  proxy and v17 with weights `0.40/0.60`, RRF constant `20`, SourceCost
+  exponent `0.20`, and top `75`. Honest SC@50 gains were
+  `+0.012827/+0.003218/+0.008411` on early/late/full holdout. Validation
+  full-fit took `134.5s`, test candidate inference `37.0s`, and strict
+  materialization `4.4s`;
+- the final parquet has `10,000` unique HitLogID rows, exactly 50 unique
+  non-null BannerID values per row, and full SHA-256
+  `30056fb5311d95df3ab214f182755ca5295ff06b0b474ddcc5a287ff97d943cf`;
+- leaderboard entry `v17 global-logq 100m direct` scored private SC@50
+  `0.6709`, Recall@50 `0.5664`, and Recall@10 `0.4332`, improving the prior
+  private best `0.6548` by `+0.0161` absolute and reaching third place
+  overall at submission time;
+- exactly one predeclared cached neighbour was checked: the same `0.40/0.60`
+  weights with raw rank fusion (RRF/exponent `0/0`, top `100`). It retained
+  positive early/late temporal gains and higher full Recall@50, but scored
+  only private SC@50 `0.6644` (Recall@50 `0.5691`, Recall@10 `0.4303`) and is
+  rejected. No further leaderboard geometry search is performed.
