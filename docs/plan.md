@@ -763,6 +763,14 @@ Selected-tower CatBoost temporal and cached ensemble gate (2026-08-09):
   `d4bc49bdc311f4f912b9d4425b587ee252c621cb026914b4cff95645f80c9f2f`.
   Private SC Recall@50 was `0.645828` with Recall@50 `0.5391`, below the
   accepted `0.649876`; this submission is rejected rather than blended again.
+- a 68.7-second cached two-pool stability grid then combined the accepted
+  private-best proxy with the refined pool. The 90/10 variant improved both
+  early and late temporal SC Recall@50 by `0.00074/0.00050` and moved private
+  only marginally to `0.649887`. The more useful 80/20 variant (RRF `5`,
+  SourceCost exponent `0.05`, top `75`) also improved both temporal halves and
+  reached private SC Recall@50 `0.650064`, Recall@50 `0.5341`, Recall@10
+  `0.3781`. It is the first accepted result above the 65% target; weights with
+  no two-half improvement were not uploaded.
 
 LogQ TwoTower gate (2026-08-09):
 
