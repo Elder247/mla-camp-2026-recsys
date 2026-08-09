@@ -682,3 +682,26 @@ honest temporal SC Recall@50 `0.655090`, its cross-pool submission scored
 `0.6257`, below the accepted `0.6262`; it is not retained. The current accepted
 private solution remains `chrono100m crosspool qrmse+yeti e02 n75` at SC
 Recall@50 `0.6262`.
+
+Feature-rich TwoTower screen (2026-08-09):
+
+- v4 added SourceCost-weighted multi-positive contrastive training. On 10M it
+  improved SC Recall@50 from `0.466180` to `0.489119`; on 100M it reached
+  `0.554266`, slightly below v3 `0.556319`, but retained complementary hits;
+- v5 added Client/Order/Caesar/SKU/price/domain banner embeddings and a second
+  independent BannerID hash. Its 10M SC Recall@50/500 was
+  `0.475818/0.686159`, with low top-50 Jaccard `0.229` against v4;
+- v6 added device/age/gender query-context embeddings and fixed null-valued
+  categorical lists. It improved 10M SC Recall@50 to `0.516974`, Recall@50 to
+  `0.423593`, and SC Recall@500 to `0.689685`; its new-only hits contributed
+  `1.774%` of total SourceCost against v5;
+- v7 kept v6 features but used the larger 4,096-example contrastive batch. It
+  reached the strongest 10M SC Recall@50 `0.546966` and Recall@50 `0.443588`,
+  with SC Recall@500 `0.670947`. Its oracle union with v6 is `0.582055` at 50
+  and `0.700336` at 500, so v7 was selected by the bounded complementarity
+  gate for exactly one 100M fit;
+- the detached sequence is immutable and sequential: v7 100M fit and honest
+  retrieval probe, a direct holdout-tuned TwoTower-only submission, then
+  leakage-safe predict-before-update OOF, cached three-tower temporal CatBoost,
+  promotion gate, and full only on an honest improvement. No two GPU training
+  stages overlap.
