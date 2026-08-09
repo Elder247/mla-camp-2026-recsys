@@ -748,6 +748,21 @@ Selected-tower CatBoost temporal and cached ensemble gate (2026-08-09):
   `20260809_1610_i4_feature_full`, launched detached with the temporal-selected
   `366` CatBoost iterations. The full output will be accepted only after the
   strict 10,000-request submission contract and an autonomous private check.
+- the full run completed in about `54m`. Its first CatBoost process fitted the
+  model but then exposed a full-scope contract bug: SourceCost tree selection
+  was requested despite the intentional absence of a full validation pool.
+  Commit `c3bf25e` makes full scope preserve the temporal-selected fixed tree
+  count; targeted tests passed `18/18`, and resume reused every completed
+  candidate/merge/feature stage. The corrected 366-tree fit took `56.2s`;
+- default CatBoost importance is led by query-history SC reciprocal rank
+  (`11.59`), neural/history reciprocal-rank cross (`3.94`), query-history
+  normalized score (`3.57`), query-SC/neural cross (`3.54`) and
+  query-region-history reciprocal rank (`3.13`);
+- the refined output independently passed 10,000 unique HitLogIDs, exactly 50
+  unique indexed non-null banners per row and full-file SHA-256
+  `d4bc49bdc311f4f912b9d4425b587ee252c621cb026914b4cff95645f80c9f2f`.
+  Private SC Recall@50 was `0.645828` with Recall@50 `0.5391`, below the
+  accepted `0.649876`; this submission is rejected rather than blended again.
 
 LogQ TwoTower gate (2026-08-09):
 
