@@ -114,6 +114,10 @@ V2_GROUP_FEATURES: dict[str, list[str]] = {
         "rrf_x_source_cost_log1p",
         "neural_rr_x_source_cost_log1p",
         "history_rr_x_source_cost_log1p",
+        "neural_rr_x_history_rr",
+        "neural_rr_x_lexical_rr",
+        "query_sc_avg_x_neural_rr",
+        "query_clicks_x_neural_rr",
     ],
 }
 
@@ -440,6 +444,7 @@ def extract_feature_rows(
         neural_best_rank = min(neural_ranks) if neural_ranks else 0.0
         lexical_best_rank = min(lexical_ranks) if lexical_ranks else 0.0
         history_best_rank = min(history_ranks) if history_ranks else 0.0
+        lexical_best_rr = 1.0 / lexical_best_rank if lexical_best_rank > 0.0 else 0.0
         neural_best_score_z = neural_score_z[0] if neural_score_z else 0.0
         neural_second_score_z = neural_score_z[1] if len(neural_score_z) > 1 else 0.0
         source_cost_log1p = values["source_cost_log1p"]
@@ -480,6 +485,16 @@ def extract_feature_rows(
                 * source_cost_log1p,
                 "history_rr_x_source_cost_log1p": history_best_rr
                 * source_cost_log1p,
+                "neural_rr_x_history_rr": neural_best_rr * history_best_rr,
+                "neural_rr_x_lexical_rr": neural_best_rr * lexical_best_rr,
+                "query_sc_avg_x_neural_rr": values.get(
+                    "counter__query__all__sc_avg", 0.0
+                )
+                * neural_best_rr,
+                "query_clicks_x_neural_rr": values.get(
+                    "counter__query__all__clicks_log1p", 0.0
+                )
+                * neural_best_rr,
             }
         )
         rows.append([float(values.get(name, 0.0)) for name in names])

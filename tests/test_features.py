@@ -139,6 +139,10 @@ class FeatureTest(unittest.TestCase):
                 "source_cost": 1_000_000.0,
                 "rrf_score": 0.2,
                 "source_count": 4,
+                "counter_features": {
+                    "counter__query__all__clicks_log1p": 2.0,
+                    "counter__query__all__sc_avg": 3.0,
+                },
                 "retrieval": {
                     "tfidf": {"rank": 7, "reciprocal_rank": 1 / 7, "score": 2.0},
                     "two_tower_old": {
@@ -195,6 +199,10 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(values["history_neural_rank_gap"], 8.0)
         self.assertGreater(values["neural_score_margin_z"], 0.0)
         self.assertGreater(values["rrf_x_source_cost_log1p"], 0.0)
+        self.assertAlmostEqual(values["neural_rr_x_history_rr"], 1 / 33)
+        self.assertAlmostEqual(values["neural_rr_x_lexical_rr"], 1 / 21)
+        self.assertAlmostEqual(values["query_sc_avg_x_neural_rr"], 1.0)
+        self.assertAlmostEqual(values["query_clicks_x_neural_rr"], 2 / 3)
 
 
 if __name__ == "__main__":
