@@ -129,6 +129,73 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(values["history_query_present"], 1.0)
         self.assertEqual(values["history_region_present"], 0.0)
 
+    def test_retrieval_cross_features_capture_two_tower_agreement(self) -> None:
+        generators = ["tfidf", "two_tower_old", "two_tower_v3", "history_query"]
+        candidates = [
+            {
+                "banner_id": 1,
+                "title": "кофе",
+                "text": "",
+                "source_cost": 1_000_000.0,
+                "rrf_score": 0.2,
+                "source_count": 4,
+                "retrieval": {
+                    "tfidf": {"rank": 7, "reciprocal_rank": 1 / 7, "score": 2.0},
+                    "two_tower_old": {
+                        "rank": 3,
+                        "reciprocal_rank": 1 / 3,
+                        "score": 0.8,
+                    },
+                    "two_tower_v3": {
+                        "rank": 5,
+                        "reciprocal_rank": 0.2,
+                        "score": 0.7,
+                    },
+                    "history_query": {
+                        "rank": 11,
+                        "reciprocal_rank": 1 / 11,
+                        "score": 10.0,
+                    },
+                },
+            },
+            {
+                "banner_id": 2,
+                "title": "чай",
+                "text": "",
+                "source_cost": 100.0,
+                "rrf_score": 0.1,
+                "source_count": 1,
+                "retrieval": {
+                    "two_tower_old": {
+                        "rank": 9,
+                        "reciprocal_rank": 1 / 9,
+                        "score": 0.2,
+                    }
+                },
+            },
+        ]
+        names = feature_names(
+            generators,
+            version="feature_v2",
+            enabled_groups=["retrieval_cross_features_v2"],
+        )
+        rows = extract_feature_rows(
+            {"query": "кофе", "context": {}},
+            candidates,
+            generators,
+            version="feature_v2",
+            enabled_groups=["retrieval_cross_features_v2"],
+        )
+        values = dict(zip(names, rows[0]))
+        self.assertEqual(values["neural_source_count"], 2.0)
+        self.assertEqual(values["neural_min_rank"], 3.0)
+        self.assertEqual(values["neural_mean_rank"], 4.0)
+        self.assertEqual(values["neural_rank_spread"], 2.0)
+        self.assertEqual(values["lexical_neural_rank_gap"], 4.0)
+        self.assertEqual(values["history_neural_rank_gap"], 8.0)
+        self.assertGreater(values["neural_score_margin_z"], 0.0)
+        self.assertGreater(values["rrf_x_source_cost_log1p"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

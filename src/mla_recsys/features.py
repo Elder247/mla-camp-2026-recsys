@@ -101,6 +101,20 @@ V2_GROUP_FEATURES: dict[str, list[str]] = {
         "user_group_minus_group_pop",
         "source_cost_x_banner_sc_avg",
     ],
+    "retrieval_cross_features_v2": [
+        "neural_source_count",
+        "neural_min_rank",
+        "neural_mean_rank",
+        "neural_rank_spread",
+        "neural_best_score_z",
+        "neural_second_score_z",
+        "neural_score_margin_z",
+        "lexical_neural_rank_gap",
+        "history_neural_rank_gap",
+        "rrf_x_source_cost_log1p",
+        "neural_rr_x_source_cost_log1p",
+        "history_rr_x_source_cost_log1p",
+    ],
 }
 
 
@@ -390,5 +404,83 @@ def extract_feature_rows(
                 if present and maximum > minimum
                 else 0.0
             )
+        neural_sources = [
+            source
+            for source in generator_names
+            if "tower" in source or "neural" in source
+        ]
+        lexical_sources = [
+            source
+            for source in generator_names
+            if "tfidf" in source or "bm25" in source
+        ]
+        history_generator_sources = [
+            source
+            for source in generator_names
+            if "history" in source or "pop" in source
+        ]
+        neural_present = [
+            source for source in neural_sources if retrieval.get(source) is not None
+        ]
+        neural_ranks = [float(retrieval[source]["rank"]) for source in neural_present]
+        neural_score_z = sorted(
+            [float(values[f"{source}__score_z"]) for source in neural_present],
+            reverse=True,
+        )
+        lexical_ranks = [
+            float(retrieval[source]["rank"])
+            for source in lexical_sources
+            if retrieval.get(source) is not None
+        ]
+        history_ranks = [
+            float(retrieval[source]["rank"])
+            for source in history_generator_sources
+            if retrieval.get(source) is not None
+        ]
+        neural_best_rank = min(neural_ranks) if neural_ranks else 0.0
+        lexical_best_rank = min(lexical_ranks) if lexical_ranks else 0.0
+        history_best_rank = min(history_ranks) if history_ranks else 0.0
+        neural_best_score_z = neural_score_z[0] if neural_score_z else 0.0
+        neural_second_score_z = neural_score_z[1] if len(neural_score_z) > 1 else 0.0
+        source_cost_log1p = values["source_cost_log1p"]
+        neural_best_rr = 1.0 / neural_best_rank if neural_best_rank > 0.0 else 0.0
+        history_best_rr = 1.0 / history_best_rank if history_best_rank > 0.0 else 0.0
+        values.update(
+            {
+                "neural_source_count": float(len(neural_present)),
+                "neural_min_rank": neural_best_rank,
+                "neural_mean_rank": (
+                    sum(neural_ranks) / len(neural_ranks) if neural_ranks else 0.0
+                ),
+                "neural_rank_spread": (
+                    max(neural_ranks) - min(neural_ranks)
+                    if len(neural_ranks) > 1
+                    else 0.0
+                ),
+                "neural_best_score_z": neural_best_score_z,
+                "neural_second_score_z": neural_second_score_z,
+                "neural_score_margin_z": (
+                    neural_best_score_z - neural_second_score_z
+                    if len(neural_score_z) > 1
+                    else 0.0
+                ),
+                "lexical_neural_rank_gap": (
+                    lexical_best_rank - neural_best_rank
+                    if lexical_best_rank > 0.0 and neural_best_rank > 0.0
+                    else 0.0
+                ),
+                "history_neural_rank_gap": (
+                    history_best_rank - neural_best_rank
+                    if history_best_rank > 0.0 and neural_best_rank > 0.0
+                    else 0.0
+                ),
+                "rrf_x_source_cost_log1p": values["rrf_score"]
+                * source_cost_log1p,
+                "neural_rr_x_source_cost_log1p": neural_best_rr
+                * source_cost_log1p,
+                "history_rr_x_source_cost_log1p": history_best_rr
+                * source_cost_log1p,
+            }
+        )
         rows.append([float(values.get(name, 0.0)) for name in names])
     return rows
