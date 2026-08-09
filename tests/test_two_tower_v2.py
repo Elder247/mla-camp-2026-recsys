@@ -314,6 +314,12 @@ def test_v7_uses_more_in_batch_negatives() -> None:
         ROOT / "configs" / "two_tower" / "v7_large_batch_chrono_10m.yaml"
     )
     assert cfg.training.batch_size == 4096
+    full = load_config(
+        ROOT / "configs" / "two_tower" / "v7_large_batch_chrono_100m.yaml"
+    )
+    assert full.training.batch_size == 4096
+    assert full.paths.train_table.endswith("train_clicks_100m_metadata_v1")
+    assert full.paths.artifact_dir.endswith("v7_large_batch_chrono_100m_model")
 
 
 def test_validation_finetune_split_is_strictly_temporal() -> None:

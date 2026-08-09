@@ -1,0 +1,27 @@
+extends: v4_scweighted_chrono_100m.yaml
+
+experiment:
+  name: two_tower_v5_ad_metadata_chrono_100m
+
+paths:
+  weekly_train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_100m_metadata_v1
+  train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_100m_metadata_v1
+  dataset_artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v5_metadata_dataset_100m
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v5_ad_metadata_chrono_100m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v5-ad-metadata-chrono-100m
+
+model:
+  banner_cardinalities:
+    banner_id_hash2_ids: 262144
+    client_id_ids: 65536
+    order_id_ids: 65536
+    caesar_model_id_ids: 65536
+    caesar_sku_id_ids: 65536
+    product_price_bucket_ids: 256
+    url_domain_ids: 65536
+
+numeric_features:
+  product_price_log1p_scale: 8.0
