@@ -25,7 +25,10 @@ from two_tower_v2.training import (  # noqa: E402
     sourcecost_example_weights,
 )
 from scripts.train_two_tower_v2 import load_config  # noqa: E402
-from scripts.finetune_two_tower_validation import select_rows  # noqa: E402
+from scripts.finetune_two_tower_validation import (  # noqa: E402
+    finetune_training_value,
+    select_rows,
+)
 
 
 def test_embedding_dimension_uses_formula_rounding_and_caps() -> None:
@@ -391,3 +394,24 @@ def test_validation_finetune_split_is_strictly_temporal() -> None:
     assert [row["hit_log_id"] for row in temporal] == [2, 3]
     full = select_rows(rows, scope="full", boundary=15)
     assert [row["hit_log_id"] for row in full] == [2, 3, 1]
+
+
+def test_validation_finetune_loss_falls_back_to_checkpoint_config() -> None:
+    from omegaconf import OmegaConf
+
+    orchestration = OmegaConf.create({"sourcecost_weight_power": 0.75})
+    checkpoint = OmegaConf.create(
+        {"training": {"sourcecost_weight_power": 0.5, "sourcecost_weight_min": 0.25}}
+    )
+    assert (
+        finetune_training_value(
+            orchestration, checkpoint, "sourcecost_weight_power", 0.0
+        )
+        == 0.75
+    )
+    assert (
+        finetune_training_value(
+            OmegaConf.create({}), checkpoint, "sourcecost_weight_min", 1.0
+        )
+        == 0.25
+    )

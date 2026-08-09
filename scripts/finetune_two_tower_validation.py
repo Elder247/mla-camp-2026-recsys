@@ -52,6 +52,22 @@ def select_rows(
     return sorted(selected, key=lambda row: (int(row["show_time"]), int(row["hit_log_id"])))
 
 
+def finetune_training_value(
+    finetune_cfg: Any,
+    model_cfg: Any,
+    name: str,
+    default: float,
+) -> float:
+    """Resolve an override against the actual checkpoint training config."""
+
+    return float(
+        finetune_cfg.get(
+            name,
+            model_cfg.get("training", {}).get(name, default),
+        )
+    )
+
+
 def main() -> int:
     args = arguments()
     cfg = load_config(args.config.resolve())
@@ -264,21 +280,27 @@ def main() -> int:
                         objective=str(cfg.finetune.objective),
                         symmetric_weight=float(cfg.finetune.symmetric_weight),
                         sourcecost_weight_power=float(
-                            cfg.finetune.get(
+                            finetune_training_value(
+                                cfg.finetune,
+                                model_cfg,
                                 "sourcecost_weight_power",
-                                cfg.training.get("sourcecost_weight_power", 0.0),
+                                0.0,
                             )
                         ),
                         sourcecost_weight_min=float(
-                            cfg.finetune.get(
+                            finetune_training_value(
+                                cfg.finetune,
+                                model_cfg,
                                 "sourcecost_weight_min",
-                                cfg.training.get("sourcecost_weight_min", 1.0),
+                                1.0,
                             )
                         ),
                         sourcecost_weight_max=float(
-                            cfg.finetune.get(
+                            finetune_training_value(
+                                cfg.finetune,
+                                model_cfg,
                                 "sourcecost_weight_max",
-                                cfg.training.get("sourcecost_weight_max", 1.0),
+                                1.0,
                             )
                         ),
                     )
