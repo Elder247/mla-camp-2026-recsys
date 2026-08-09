@@ -1,0 +1,20 @@
+extends: v13_output128_logq_half_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v15_combined_logq_half_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v15_combined_logq_half_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v15-combined-logq-half-chrono-10m
+
+model:
+  # Keep the strongest standalone capacity screen and add only the two
+  # complementary identity signals that passed the temporal two-half gate.
+  query_cardinalities:
+    crypta_id_hash1_ids: 1048576
+    crypta_id_hash2_ids: 1048576
+  banner_cardinalities:
+    banner_id_hash2_ids: 1048576

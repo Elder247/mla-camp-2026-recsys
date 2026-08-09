@@ -530,6 +530,23 @@ def test_short_logq_quality_screens_change_one_axis_each() -> None:
     assert income.paths.train_table.endswith("train_clicks_10m_metadata_income_v1")
 
 
+def test_v15_combines_only_temporally_accepted_logq_screens() -> None:
+    combined = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v15_combined_logq_half_chrono_10m.yaml"
+    )
+    assert combined.training.logq_power == 0.5
+    assert combined.training.prefetch_batches == 2
+    assert combined.model.hidden_dim == 512
+    assert combined.model.output_dim == 128
+    assert combined.model.query_cardinalities.crypta_id_hash1_ids == 1_048_576
+    assert combined.model.query_cardinalities.crypta_id_hash2_ids == 1_048_576
+    assert combined.model.banner_cardinalities.banner_id_hash2_ids == 1_048_576
+    assert "income_ids" not in combined.model.query_cardinalities
+
+
 def test_v7_uses_more_in_batch_negatives() -> None:
     cfg = load_config(
         ROOT / "configs" / "two_tower" / "v7_large_batch_chrono_10m.yaml"
