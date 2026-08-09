@@ -12,7 +12,7 @@ import json
 import resource
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -24,6 +24,7 @@ from mla_recsys.artifacts import fingerprint_file  # noqa: E402
 from mla_recsys.data import read_request_parquet  # noqa: E402
 from mla_recsys.metrics import MISS_RANK, recall_metrics  # noqa: E402
 from mla_recsys.rank_blend import value_geometric_from_base_order  # noqa: E402
+from mla_recsys.text import normalize  # noqa: E402
 
 
 Rankings = dict[int, list[int]]
@@ -71,6 +72,14 @@ def simplex_weights(
 def value_at_least(value: float, threshold: float) -> bool:
     """Compare grid weights without dropping a boundary to float noise."""
     return value + 1.0e-12 >= threshold
+
+
+def conditional_weights(
+    weights: tuple[float, ...], *, use_secondary_sources: bool
+) -> tuple[float, ...]:
+    if use_secondary_sources:
+        return weights
+    return (1.0, *(0.0 for _ in weights[1:]))
 
 
 def read_ranking(path: Path, *, candidate_top_k: int = 0) -> Rankings:
@@ -199,6 +208,19 @@ def main() -> int:
     parser.add_argument("--refine-top", type=int, default=5)
     parser.add_argument("--tune-fraction", type=float, default=0.5)
     parser.add_argument(
+        "--tail-train-requests",
+        type=Path,
+        help=(
+            "Past-only request parquet used to count normalized queries. When "
+            "set, secondary sources are used only for sufficiently rare queries."
+        ),
+    )
+    parser.add_argument(
+        "--secondary-query-count-max",
+        type=int,
+        help="Use secondary sources only when past normalized-query count is <= this",
+    )
+    parser.add_argument(
         "--candidate-top-k",
         type=int,
         default=0,
@@ -222,6 +244,26 @@ def main() -> int:
         read_request_parquet(args.requests),
         key=lambda row: (int(row.get("show_time") or 0), str(row["request_id"])),
     )
+    if (args.tail_train_requests is None) != (
+        args.secondary_query_count_max is None
+    ):
+        parser.error(
+            "--tail-train-requests and --secondary-query-count-max must be set together"
+        )
+    if args.secondary_query_count_max is not None and args.secondary_query_count_max < 0:
+        parser.error("--secondary-query-count-max must be non-negative")
+    tail_hit_log_ids: set[int] | None = None
+    if args.tail_train_requests is not None:
+        past_counts = Counter(
+            normalize(row["query"])
+            for row in read_request_parquet(args.tail_train_requests)
+        )
+        tail_hit_log_ids = {
+            int(row["hit_log_id"])
+            for row in requests
+            if past_counts[normalize(row["query"])]
+            <= args.secondary_query_count_max
+        }
     split = max(1, min(len(requests) - 1, int(len(requests) * args.tune_fraction)))
     tune_ids = {int(row["hit_log_id"]) for row in requests[:split]}
     validation_ids = {int(row["hit_log_id"]) for row in requests[split:]}
@@ -245,7 +287,12 @@ def main() -> int:
             orders = {
                 hit_log_id: fuse_rankings(
                     [source.get(hit_log_id, []) for source in sources],
-                    weights,
+                    conditional_weights(
+                        weights,
+                        use_secondary_sources=(
+                            tail_hit_log_ids is None or hit_log_id in tail_hit_log_ids
+                        ),
+                    ),
                     rrf_constant=constant,
                     hit_log_id=hit_log_id,
                     source_costs=source_costs,
@@ -274,7 +321,12 @@ def main() -> int:
         base_order = {
             hit_log_id: fuse_rankings(
                 [source.get(hit_log_id, []) for source in sources],
-                key[0],
+                conditional_weights(
+                    key[0],
+                    use_secondary_sources=(
+                        tail_hit_log_ids is None or hit_log_id in tail_hit_log_ids
+                    ),
+                ),
                 rrf_constant=key[1],
                 hit_log_id=hit_log_id,
                 source_costs=source_costs,
@@ -316,6 +368,13 @@ def main() -> int:
         "input_paths": [str(path) for path in args.input],
         "candidate_top_k": args.candidate_top_k,
         "minimum_first_weight": args.minimum_first_weight,
+        "tail_train_requests": (
+            str(args.tail_train_requests) if args.tail_train_requests else None
+        ),
+        "secondary_query_count_max": args.secondary_query_count_max,
+        "secondary_request_count": (
+            len(tail_hit_log_ids) if tail_hit_log_ids is not None else len(requests)
+        ),
         "requests": len(requests),
         "tune_requests": len(tune_ids),
         "validation_requests": len(validation_ids),

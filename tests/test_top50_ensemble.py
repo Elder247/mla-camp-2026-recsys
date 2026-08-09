@@ -3,7 +3,12 @@ from __future__ import annotations
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from scripts.tune_top50_ensemble import fuse_rankings, read_ranking, simplex_weights
+from scripts.tune_top50_ensemble import (
+    conditional_weights,
+    fuse_rankings,
+    read_ranking,
+    simplex_weights,
+)
 
 
 def test_simplex_weights_cover_the_unit_simplex() -> None:
@@ -19,6 +24,16 @@ def test_simplex_weights_can_preserve_a_strong_control_source() -> None:
     assert all(row[0] >= 0.8 for row in values)
     assert (0.8, 0.1, 0.1) in values
     assert (1.0, 0.0, 0.0) in values
+
+
+def test_conditional_weights_fall_back_to_first_input_only() -> None:
+    weights = (0.8, 0.1, 0.1)
+    assert conditional_weights(weights, use_secondary_sources=True) == weights
+    assert conditional_weights(weights, use_secondary_sources=False) == (
+        1.0,
+        0.0,
+        0.0,
+    )
 
 
 def test_fuse_rankings_rewards_shared_candidates() -> None:
