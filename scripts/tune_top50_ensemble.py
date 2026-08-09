@@ -60,7 +60,7 @@ def simplex_weights(count: int, step: float) -> list[tuple[float, ...]]:
     ]
 
 
-def read_ranking(path: Path) -> Rankings:
+def read_ranking(path: Path, *, candidate_top_k: int = 0) -> Rankings:
     if path.is_file():
         table = pq.read_table(path, columns=["HitLogID", "BannerID"])
         return {
@@ -72,8 +72,15 @@ def read_ranking(path: Path) -> Rankings:
         raise FileNotFoundError(f"No ranking parquet found at {path}")
     grouped: dict[int, list[tuple[int, int]]] = defaultdict(list)
     for part in parts:
+        filters = (
+            [("source_rank", "<=", candidate_top_k)]
+            if candidate_top_k > 0
+            else None
+        )
         table = pq.read_table(
-            part, columns=["hit_log_id", "banner_id", "source_rank"]
+            part,
+            columns=["hit_log_id", "banner_id", "source_rank"],
+            filters=filters,
         )
         for row in table.to_pylist():
             grouped[int(row["hit_log_id"])].append(
@@ -172,12 +179,26 @@ def main() -> int:
     parser.add_argument("--geometry-top-n", default="50,75,100")
     parser.add_argument("--refine-top", type=int, default=5)
     parser.add_argument("--tune-fraction", type=float, default=0.5)
+    parser.add_argument(
+        "--candidate-top-k",
+        type=int,
+        default=0,
+        help=(
+            "Read only this many rows per request from candidate directories; "
+            "zero preserves the complete ranking. Use 100 for fast Recall@50 probes."
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not 0.0 < args.tune_fraction < 1.0:
         raise ValueError("tune-fraction must be in (0, 1)")
 
-    sources = [read_ranking(path) for path in args.input]
+    if args.candidate_top_k < 0:
+        raise ValueError("candidate-top-k must be non-negative")
+    sources = [
+        read_ranking(path, candidate_top_k=args.candidate_top_k)
+        for path in args.input
+    ]
     requests = sorted(
         read_request_parquet(args.requests),
         key=lambda row: (int(row.get("show_time") or 0), str(row["request_id"])),
@@ -263,6 +284,7 @@ def main() -> int:
     report = {
         "inputs": [fingerprint_file(path) for path in args.input if path.is_file()],
         "input_paths": [str(path) for path in args.input],
+        "candidate_top_k": args.candidate_top_k,
         "requests": len(requests),
         "tune_requests": len(tune_ids),
         "validation_requests": len(validation_ids),
