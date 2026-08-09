@@ -40,11 +40,14 @@ def main() -> int:
     parser.add_argument("--prior-dir", type=Path, required=True)
     parser.add_argument("--alpha", type=float, required=True)
     parser.add_argument("--unseen-count", type=float, default=1.0)
+    parser.add_argument("--rerank-top-n", type=int, default=100)
     args = parser.parse_args()
     if not -1.0 <= args.alpha <= 1.0:
         raise ValueError("alpha must be in [-1, 1]")
     if args.unseen_count <= 0.0:
         raise ValueError("unseen-count must be positive")
+    if args.rerank_top_n <= 0:
+        raise ValueError("rerank-top-n must be positive")
     if not args.artifact_dir.is_dir():
         raise FileNotFoundError(f"artifact directory is missing: {args.artifact_dir}")
     target = args.artifact_dir / "inference_config.json"
@@ -62,6 +65,7 @@ def main() -> int:
         "kind": "global_banner_logq_restore",
         "alpha": float(args.alpha),
         "unseen_count": float(args.unseen_count),
+        "rerank_top_n": int(args.rerank_top_n),
         "prior_dir": str(args.prior_dir),
         "prior_manifest_sha256": file_sha256(prior_manifest_path),
         "prior_source": prior_manifest["source"],

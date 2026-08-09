@@ -88,7 +88,38 @@ def load_logq_restore_bias(
         "prior_dir": str(prior_dir),
         "candidate_coverage": float(matched.mean()),
         "candidate_misses": int((~matched).sum()),
+        "rerank_top_n": int(config.get("rerank_top_n", 100)),
     }
+
+
+def bounded_logq_restore(
+    values: torch.Tensor,
+    indices: torch.Tensor,
+    *,
+    candidate_bias: torch.Tensor | None,
+    rerank_top_n: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Restore popularity only inside the natural retrieval head."""
+
+    if candidate_bias is None:
+        return values, indices, torch.zeros_like(values)
+    if rerank_top_n <= 0:
+        raise ValueError("logQ inference rerank_top_n must be positive")
+    head = min(int(rerank_top_n), values.shape[1])
+    head_indices = indices[:, :head]
+    head_bias = candidate_bias[head_indices]
+    adjusted = values[:, :head] + head_bias
+    order = torch.argsort(adjusted, dim=1, descending=True, stable=True)
+    ranked_values = torch.gather(adjusted, 1, order)
+    ranked_indices = torch.gather(head_indices, 1, order)
+    ranked_bias = torch.gather(head_bias, 1, order)
+    if head == values.shape[1]:
+        return ranked_values, ranked_indices, ranked_bias
+    return (
+        torch.cat((ranked_values, values[:, head:]), dim=1),
+        torch.cat((ranked_indices, indices[:, head:]), dim=1),
+        torch.cat((ranked_bias, torch.zeros_like(values[:, head:])), dim=1),
+    )
 
 
 def input_schema() -> list[dict[str, Any]]:
@@ -241,14 +272,14 @@ def rank_batch(
         scores = query_vectors.to(model["candidate_vectors"].dtype) @ model[
             "candidate_vectors"
         ].T
-        if model.get("candidate_logq_bias") is not None:
-            scores = scores + model["candidate_logq_bias"].unsqueeze(0)
         count = min(top_k, scores.shape[1])
         values, indices = torch.topk(scores, k=count, dim=1)
-        selected_bias = (
-            model["candidate_logq_bias"][indices]
-            if model.get("candidate_logq_bias") is not None
-            else torch.zeros_like(values)
+        inference = model.get("metadata", {}).get("inference") or {}
+        values, indices, selected_bias = bounded_logq_restore(
+            values,
+            indices,
+            candidate_bias=model.get("candidate_logq_bias"),
+            rerank_top_n=int(inference.get("rerank_top_n", 100)),
         )
     metadata = model["candidate_metadata"]
     output: list[list[dict[str, Any]]] = []

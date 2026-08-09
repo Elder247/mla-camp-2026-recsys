@@ -1029,3 +1029,15 @@ YT recovery, private scoring and next direct TwoTower gate (2026-08-09):
   sorted ids, records coverage, and is propagated unchanged into validation
   full-fit artifacts. It changes no training labels or candidate membership
   based on targets. Tests pass `193/193` after the addition.
+- applying the same bias before natural top-k was explicitly tested and
+  rejected: although SC@50 rose by `+0.003389`, SC@500 fell by `-0.003231`.
+  The production implementation therefore retrieves the natural pool first
+  and reorders only its first 100 rows. A repeated generator-level probe
+  exactly reproduces the cached result: Recall/SC@50
+  `0.502999/0.597363 -> 0.516710/0.612224`, with Recall/SC@100 and @500
+  bit-for-bit unchanged. Tests pass `194/194` after this correction;
+- blending the bounded 10M ranking with the current private-best proxy selects
+  weights `0.75/0.25`, RRF `0`, no extra SourceCost geometry. SC@50 gains over
+  the proxy control are `+0.013332` on the earlier half and `+0.001292` on the
+  later half (`+0.007799` overall), so the full 100M downstream gate remains
+  justified without weakening the two-half acceptance rule.

@@ -13,7 +13,10 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from generators.two_tower_v2_batch import load_logq_restore_bias  # noqa: E402
+from generators.two_tower_v2_batch import (  # noqa: E402
+    bounded_logq_restore,
+    load_logq_restore_bias,
+)
 from scripts.tune_two_tower_logq_geometry import logq_rerank  # noqa: E402
 from two_tower_v2.training import file_sha256  # noqa: E402
 
@@ -72,3 +75,18 @@ def test_inference_bias_validates_prior_and_aligns_candidate_ids(tmp_path) -> No
     assert bias is not None
     assert bias.tolist() == pytest.approx([0.05 * math.log(100.0), 0.0])
     assert info["candidate_coverage"] == pytest.approx(0.5)
+
+
+def test_bounded_restore_never_changes_tail_membership_or_order() -> None:
+    values = torch.tensor([[0.9, 0.8, 0.7]])
+    indices = torch.tensor([[0, 1, 2]])
+    bias = torch.tensor([0.0, 0.2, 1.0])
+    adjusted, ranked, selected_bias = bounded_logq_restore(
+        values,
+        indices,
+        candidate_bias=bias,
+        rerank_top_n=2,
+    )
+    assert ranked.tolist() == [[1, 0, 2]]
+    assert torch.allclose(adjusted, torch.tensor([[1.0, 0.9, 0.7]]))
+    assert torch.allclose(selected_bias, torch.tensor([[0.2, 0.0, 0.0]]))
