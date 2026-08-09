@@ -4,10 +4,15 @@ import sys
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from mla_recsys.features import extract_feature_rows, feature_names  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "scripts"))
+from export_ranker_ranking import ordered_banner_ids  # noqa: E402
 
 
 class FeatureTest(unittest.TestCase):
@@ -246,6 +251,15 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(present_values["income_bucket"], 4.0)
         self.assertEqual(missing_values["income_numeric"], 0.0)
         self.assertEqual(missing_values["income_missing"], 1.0)
+
+    def test_exported_ranker_order_uses_stable_ties(self) -> None:
+        ordered = ordered_banner_ids(
+            np.asarray([0.5, 0.7, 0.7, 0.1]),
+            np.asarray([1, 3, 2, 4]),
+            np.asarray([40, 30, 20, 10]),
+            top_k=3,
+        )
+        self.assertEqual(ordered, [20, 30, 40])
 
 
 if __name__ == "__main__":
