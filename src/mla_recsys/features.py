@@ -56,6 +56,11 @@ V2_GROUP_FEATURES: dict[str, list[str]] = {
         "query_cyrillic_share",
         "query_latin_share",
     ],
+    "request_income_v1": [
+        "income_numeric",
+        "income_missing",
+        "income_bucket",
+    ],
     "candidate_static_v2": [
         "source_cost_raw",
         "source_cost_missing",
@@ -313,6 +318,9 @@ def extract_feature_rows(
             "age_bucket": float(int(context.get("age") or 0) // 10),
             "gender_numeric": float(context.get("gender") or 0),
             "gender_missing": float(context.get("gender") is None),
+            "income_numeric": float(context.get("income") or 0),
+            "income_missing": float(context.get("income") is None),
+            "income_bucket": float(int(context.get("income") or 0)),
             "query_digit_share": _share(query, r"[0-9]"),
             "query_cyrillic_share": _share(query, r"[а-яё]"),
             "query_latin_share": _share(query, r"[a-z]"),

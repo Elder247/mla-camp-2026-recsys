@@ -1,0 +1,96 @@
+experiment:
+  name: i26_v17_logq_reranker
+  description: Natural-pool CatBoost reranker over v17 top500 and complementary logQ-p1 top100
+
+promotion_gate:
+  candidate_sourcecost_recall_at_500: 0.7368737
+  ranker_sourcecost_recall_at_50: 0.6811694
+  ranking_candidates: [catboost, blend]
+
+pipeline:
+  max_parallel_cg: 1
+  merge_partition_workers: 8
+  feature_partition_workers: 8
+  max_wall_seconds: 7200
+
+paths:
+  root: /home/astrofimuk/workspace/mla_two_stage_accel
+  runs: /home/astrofimuk/workspace/mla_two_stage/runs
+  cache: /home/astrofimuk/workspace/mla_two_stage/cache
+  immutable_artifacts: /home/astrofimuk/workspace/mla_two_stage/artifacts
+  two_tower_v17_rerank_artifact: ${paths.immutable_artifacts}/two_tower_v17_global_logq_chrono_100m_model
+  two_tower_logq_p1_rerank_artifact: ${paths.immutable_artifacts}/two_tower_v8_logq_chrono_100m_model
+
+candidates:
+  rrf_constant: 20.0
+  union_max_candidates: 600
+  ranker_pool: 600
+  generators:
+    two_tower_v17_rerank:
+      enabled: true
+      resource: gpu
+      feature_name: two_tower_v17
+      code_path_key: two_tower_v2_code
+      code_dependency_path_keys:
+        - two_tower_v2_model_code
+        - two_tower_v2_data_code
+        - two_tower_v2_training_code
+      artifact_path_key: two_tower_v17_rerank_artifact
+      python_path_keys: [root, step2_root]
+      quota: 500
+      top_k: 500
+      weight: 1.0
+      batch_size: 256
+    two_tower_logq_p1_rerank:
+      enabled: true
+      resource: gpu
+      feature_name: two_tower_logq_p1
+      code_path_key: two_tower_v2_code
+      code_dependency_path_keys:
+        - two_tower_v2_model_code
+        - two_tower_v2_data_code
+        - two_tower_v2_training_code
+      artifact_path_key: two_tower_logq_p1_rerank_artifact
+      python_path_keys: [root, step2_root]
+      quota: 100
+      top_k: 100
+      weight: 1.0
+      batch_size: 256
+
+features:
+  version: feature_v5_v17_logq_reranker
+  counter_version: click_events_asof_v17_reranker_v1
+  counter_windows_days: [28, 0]
+  counter_families: [query, user, banner, query_banner, region_banner]
+  enabled:
+    - retrieval_provenance_v2
+    - request_context_v2
+    - request_income_v1
+    - candidate_static_v2
+    - text_match_v2
+    - weekly_counters_v1
+    - cross_features_v1
+    - retrieval_cross_features_v2
+
+ranker:
+  version: catboost_queryrmse_v17_logq_reranker_v1
+  kind: ranker_logsc
+  loss_function: QueryRMSE
+  selection_metric: sourcecost_recall
+  selection_eval_period: 25
+  iterations: 400
+  depth: 8
+  learning_rate: 0.07
+  l2_leaf_reg: 5.0
+  log_sc_scale: 1000000.0
+
+submission:
+  ranking: blend
+  blend:
+    method: rank_linear
+    catboost_weight: 0.6
+
+evaluation:
+  complementarity_baseline_sources: [two_tower_v17_rerank]
+  high_value_quantile: 0.9
+  parity_temporal_workers: 3

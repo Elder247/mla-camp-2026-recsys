@@ -247,6 +247,7 @@ def build_feature_partition(
                 "device": request.get("device"),
                 "age": request.get("age"),
                 "gender": request.get("gender"),
+                "income": request.get("income"),
             },
         }
         if counter_lookup is not None:

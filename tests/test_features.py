@@ -204,6 +204,49 @@ class FeatureTest(unittest.TestCase):
         self.assertAlmostEqual(values["query_sc_avg_x_neural_rr"], 1.0)
         self.assertAlmostEqual(values["query_clicks_x_neural_rr"], 2 / 3)
 
+    def test_income_context_is_explicit_and_missing_safe(self) -> None:
+        names = feature_names(
+            ["two_tower_v17"],
+            version="feature_v2",
+            enabled_groups=["request_income_v1"],
+        )
+        candidate = {
+            "banner_id": 1,
+            "title": "",
+            "text": "",
+            "source_cost": 0.0,
+            "rrf_score": 0.1,
+            "source_count": 1,
+            "retrieval": {
+                "two_tower_v17": {
+                    "rank": 1,
+                    "reciprocal_rank": 1.0,
+                    "score": 0.5,
+                }
+            },
+        }
+        present = extract_feature_rows(
+            {"query": "кофе", "context": {"income": 4}},
+            [candidate],
+            ["two_tower_v17"],
+            version="feature_v2",
+            enabled_groups=["request_income_v1"],
+        )[0]
+        missing = extract_feature_rows(
+            {"query": "кофе", "context": {}},
+            [candidate],
+            ["two_tower_v17"],
+            version="feature_v2",
+            enabled_groups=["request_income_v1"],
+        )[0]
+        present_values = dict(zip(names, present))
+        missing_values = dict(zip(names, missing))
+        self.assertEqual(present_values["income_numeric"], 4.0)
+        self.assertEqual(present_values["income_missing"], 0.0)
+        self.assertEqual(present_values["income_bucket"], 4.0)
+        self.assertEqual(missing_values["income_numeric"], 0.0)
+        self.assertEqual(missing_values["income_missing"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
