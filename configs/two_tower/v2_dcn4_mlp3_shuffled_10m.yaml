@@ -1,0 +1,18 @@
+extends: v2_dcn4_mlp3_full.yaml
+
+experiment:
+  name: two_tower_v2_dcn4_mlp3_shuffled_10m
+
+paths:
+  train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_10m_v1
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_dcn4_mlp3_shuffled_10m
+
+tracking:
+  underdeep:
+    run_name: two-tower-v2-dcn4-mlp3-shuffled-10m
+
+training:
+  strict_chronological: false
+  shuffle_buffer: 20000
+  validate_every_rows: 500000
+  log_every: 100

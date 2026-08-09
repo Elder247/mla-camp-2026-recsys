@@ -102,3 +102,20 @@ def test_chronological_config_preserves_sorted_yt_stream() -> None:
         "unordered": True,
         "enable_read_parallel": True,
     }
+
+
+def test_10m_order_probe_changes_only_the_stream_policy() -> None:
+    chronological = load_config(
+        ROOT / "configs" / "two_tower" / "v2_dcn4_mlp3_chrono_10m.yaml"
+    )
+    shuffled = load_config(
+        ROOT / "configs" / "two_tower" / "v2_dcn4_mlp3_shuffled_10m.yaml"
+    )
+
+    assert chronological.paths.train_table == shuffled.paths.train_table
+    assert chronological.training.seed == shuffled.training.seed
+    assert chronological.model == shuffled.model
+    assert chronological.training.strict_chronological
+    assert chronological.training.shuffle_buffer == 1
+    assert not shuffled.training.strict_chronological
+    assert shuffled.training.shuffle_buffer == 20000
