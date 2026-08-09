@@ -1,0 +1,21 @@
+extends: v3_bpe_multipos_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v3_bpe_multipos_smoke
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_smoke
+
+tracking:
+  underdeep:
+    run_name: two-tower-v3-bpe-multipos-smoke
+
+training:
+  max_steps: 2
+  max_examples: 2048
+  validate_every_rows: 2048
+  log_every: 1
+
+export:
+  batch_size: 1000
+  max_index_rows: 1000

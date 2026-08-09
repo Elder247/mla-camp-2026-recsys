@@ -7,7 +7,8 @@ paths:
   raw_train_table: //home/bm/users/argus/mla/data/train_100m
   weekly_train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_100m_bpe_v2
   train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_100m_bpe_v2
-  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_chrono_100m
+  dataset_artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_dataset_100m
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_chrono_100m_model
 
 tracking:
   underdeep:

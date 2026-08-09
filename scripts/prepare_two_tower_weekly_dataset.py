@@ -73,7 +73,9 @@ def main() -> int:
     if not YT_PATH_PATTERN.fullmatch(source) or not YT_PATH_PATTERN.fullmatch(target):
         raise ValueError("Unsafe YT input/output path")
     client = make_client()
-    artifact_dir = Path(str(cfg.paths.artifact_dir))
+    artifact_dir = Path(
+        str(cfg.paths.get("dataset_artifact_dir", cfg.paths.artifact_dir))
+    )
     artifact_dir.mkdir(parents=True, exist_ok=True)
     report_path = artifact_dir / "weekly_dataset.json"
     if client.exists(target):
