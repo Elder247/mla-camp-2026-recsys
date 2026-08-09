@@ -30,6 +30,7 @@ from scripts.finetune_two_tower_validation import (  # noqa: E402
     finetune_training_value,
     select_rows,
 )
+from generators.two_tower_v2_batch import _query_row  # noqa: E402
 
 
 def test_embedding_dimension_uses_formula_rounding_and_caps() -> None:
@@ -250,6 +251,29 @@ def test_positive_mask_prefers_raw_banner_id_over_hash_collision() -> None:
     ]
 
 
+def test_positive_mask_distinguishes_users_for_personalized_queries() -> None:
+    rows = [
+        {
+            "query_word_ids": [1],
+            "region_ids": [4],
+            "crypta_id_v2": 101,
+            "banner_id": 11,
+            "banner_id_ids": [11],
+        },
+        {
+            "query_word_ids": [1],
+            "region_ids": [4],
+            "crypta_id_v2": 202,
+            "banner_id": 22,
+            "banner_id_ids": [22],
+        },
+    ]
+    assert positive_mask(rows, device=torch.device("cpu")).tolist() == [
+        [True, False],
+        [False, True],
+    ]
+
+
 def test_batch_frequency_logq_counts_both_sampling_directions() -> None:
     rows = [
         {
@@ -388,6 +412,122 @@ def test_second_banner_hash_is_independent_and_config_gated() -> None:
     )
     expected = wide_feature_bucket("banner2:123456") % 262144
     assert rows[0]["banner_id_hash2_ids"] == [expected]
+
+
+def test_two_crypta_hashes_are_independent_and_reserve_missing_bucket() -> None:
+    cardinalities = {
+        "crypta_id_hash1_ids": 1024,
+        "crypta_id_hash2_ids": 1024,
+    }
+    assert "crypta_id_v2" in source_fields(cardinalities)
+    rows = enrich_rows(
+        [{"crypta_id_v2": 123456}, {"crypta_id_v2": 0}],
+        cardinalities=cardinalities,
+        tokenizer=None,
+    )
+    first = rows[0]["crypta_id_hash1_ids"][0]
+    second = rows[0]["crypta_id_hash2_ids"][0]
+    assert 1 <= first < 1024
+    assert 1 <= second < 1024
+    assert first != second
+    assert rows[1]["crypta_id_hash1_ids"] == [0]
+    assert rows[1]["crypta_id_hash2_ids"] == [0]
+
+
+def test_query_inference_propagates_crypta_context_to_hash_features() -> None:
+    row, _ = _query_row(
+        {
+            "query": "example",
+            "context": {"region_id": 1, "crypta_id_v2": 123456},
+        }
+    )
+    assert row["crypta_id_v2"] == 123456
+    enriched = enrich_rows(
+        [row],
+        cardinalities={
+            "crypta_id_hash1_ids": 1024,
+            "crypta_id_hash2_ids": 1024,
+        },
+        tokenizer=None,
+    )[0]
+    assert enriched["crypta_id_hash1_ids"][0] > 0
+    assert enriched["crypta_id_hash2_ids"][0] > 0
+
+
+def test_query_inference_maps_income_to_non_negative_category() -> None:
+    missing, _ = _query_row({"query": "example", "context": {"income": -1}})
+    highest, _ = _query_row({"query": "example", "context": {"income": 4}})
+    assert missing["income_ids"] == [0]
+    assert highest["income_ids"] == [5]
+
+
+def test_v9_config_adds_hashed_user_context_only_by_override() -> None:
+    old = load_config(
+        ROOT / "configs" / "two_tower" / "v8_logq_half_chrono_10m.yaml"
+    )
+    new = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v9_user_context_logq_half_chrono_10m.yaml"
+    )
+    assert "crypta_id_hash1_ids" not in old.model.query_cardinalities
+    assert new.model.query_cardinalities.crypta_id_hash1_ids == 1_048_576
+    assert new.model.query_cardinalities.crypta_id_hash2_ids == 1_048_576
+    assert new.training.logq_power == 0.5
+
+
+def test_short_logq_quality_screens_change_one_axis_each() -> None:
+    baseline = load_config(
+        ROOT / "configs" / "two_tower" / "v8_logq_half_chrono_10m.yaml"
+    )
+    large_batch = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v10_large_batch_logq_half_chrono_10m.yaml"
+    )
+    sc075 = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v11_sc075_logq_half_chrono_10m.yaml"
+    )
+    wide_banner = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v12_wide_banner_hash_logq_half_chrono_10m.yaml"
+    )
+    output128 = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v13_output128_logq_half_chrono_10m.yaml"
+    )
+    income = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v14_income_logq_half_chrono_10m.yaml"
+    )
+    assert baseline.training.batch_size == 4096
+    assert large_batch.training.prefetch_batches == 2
+    assert large_batch.training.batch_size == 8192
+    assert (
+        large_batch.training.sourcecost_weight_power
+        == baseline.training.sourcecost_weight_power
+    )
+    assert sc075.training.batch_size == baseline.training.batch_size
+    assert sc075.training.sourcecost_weight_power == 0.75
+    assert large_batch.training.logq_power == sc075.training.logq_power == 0.5
+    assert (
+        wide_banner.model.banner_cardinalities.banner_id_hash2_ids == 1_048_576
+    )
+    assert output128.model.hidden_dim == 512
+    assert output128.model.output_dim == 128
+    assert income.model.query_cardinalities.income_ids == 8
+    assert income.paths.train_table.endswith("train_clicks_10m_metadata_income_v1")
 
 
 def test_v7_uses_more_in_batch_negatives() -> None:

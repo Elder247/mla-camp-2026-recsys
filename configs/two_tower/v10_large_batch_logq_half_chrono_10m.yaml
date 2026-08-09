@@ -1,0 +1,16 @@
+extends: v8_logq_half_fast_base_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v10_large_batch_logq_half_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v10_large_batch_logq_half_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v10-large-batch-logq-half-chrono-10m
+
+training:
+  # v7 gained strongly from 1,024 -> 4,096 in-batch negatives. The H100 has
+  # ample headroom, so screen exactly one further doubling before any 100M fit.
+  batch_size: 8192

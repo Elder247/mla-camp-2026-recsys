@@ -21,12 +21,13 @@ BANNER_FIELDS = (
 ALL_FIELDS = QUERY_FIELDS + BANNER_FIELDS
 TEXT_SOURCE_FIELDS = ("query_text", "title_text", "text_text", "banner_url")
 NUMERIC_SOURCE_FIELDS = ("source_cost", "product_price")
-INTEGER_SOURCE_FIELDS = ("banner_id",)
+INTEGER_SOURCE_FIELDS = ("banner_id", "crypta_id_v2")
 BPE_FIELDS = ("query_bpe_ids", "title_bpe_ids", "text_bpe_ids")
 DIRECT_SOURCE_FIELDS = (
     "device_ids",
     "age_bucket_ids",
     "gender_ids",
+    "income_ids",
     "client_id_ids",
     "order_id_ids",
     "caesar_model_id_ids",
@@ -34,6 +35,8 @@ DIRECT_SOURCE_FIELDS = (
 )
 DERIVED_FIELDS = (
     "query_region_ids",
+    "crypta_id_hash1_ids",
+    "crypta_id_hash2_ids",
     "source_cost_bucket_ids",
     "product_price_bucket_ids",
     "url_domain_ids",
@@ -56,6 +59,11 @@ def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
         fields.append("banner_url")
     if "banner_id_hash2_ids" in cardinalities:
         fields.append("banner_id")
+    if any(
+        name in cardinalities
+        for name in ("crypta_id_hash1_ids", "crypta_id_hash2_ids")
+    ):
+        fields.append("crypta_id_v2")
     return tuple(fields)
 
 
@@ -256,6 +264,25 @@ def enrich_rows(
                 ((int(token) * 16_777_619) ^ region) % cardinality
                 for token in query
             ]
+    for feature_name, namespace in (
+        ("crypta_id_hash1_ids", "crypta1"),
+        ("crypta_id_hash2_ids", "crypta2"),
+    ):
+        if feature_name not in cardinalities:
+            continue
+        cardinality = int(cardinalities[feature_name])
+        if cardinality <= 1:
+            raise ValueError(f"{feature_name} cardinality must exceed one")
+        for row in enriched:
+            crypta_id = int(row.get("crypta_id_v2") or 0)
+            bucket = (
+                0
+                if crypta_id <= 0
+                else 1
+                + wide_feature_bucket(f"{namespace}:{crypta_id}")
+                % (cardinality - 1)
+            )
+            row[feature_name] = [bucket]
     if "source_cost_bucket_ids" in cardinalities:
         if source_cost_log1p_scale <= 0.0:
             raise ValueError("source_cost_log1p_scale must be positive")

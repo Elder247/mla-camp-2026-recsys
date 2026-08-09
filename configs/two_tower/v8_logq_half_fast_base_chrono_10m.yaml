@@ -1,0 +1,5 @@
+extends: v8_logq_half_chrono_10m.yaml
+
+training:
+  # Overlap YT decoding/network reads with GPU work without reordering rows.
+  prefetch_batches: 2

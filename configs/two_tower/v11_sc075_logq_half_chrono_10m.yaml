@@ -1,0 +1,16 @@
+extends: v8_logq_half_fast_base_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v11_sc075_logq_half_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v11_sc075_logq_half_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v11-sc075-logq-half-chrono-10m
+
+training:
+  # SourceCost is the target metric and is available before ranking. Increase
+  # the already useful bounded weighting gently instead of changing the loss.
+  sourcecost_weight_power: 0.75

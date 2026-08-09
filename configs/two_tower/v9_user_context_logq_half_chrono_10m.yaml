@@ -1,0 +1,19 @@
+extends: v8_logq_half_fast_base_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v9_user_context_logq_half_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v9_user_context_logq_half_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v9-user-context-logq-half-chrono-10m
+
+model:
+  query_cardinalities:
+    # Two independent hashes make collisions unlikely while keeping the model
+    # much smaller than a direct 14M-user embedding table. Bucket zero is
+    # reserved for missing CryptaIDv2.
+    crypta_id_hash1_ids: 1048576
+    crypta_id_hash2_ids: 1048576

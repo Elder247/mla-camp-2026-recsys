@@ -22,6 +22,7 @@ REQUEST_SCHEMA = pa.schema(
         pa.field("device", pa.string(), nullable=True),
         pa.field("age", pa.int32(), nullable=True),
         pa.field("gender", pa.int32(), nullable=True),
+        pa.field("income", pa.int32(), nullable=True),
         pa.field("clicked_banner_ids", pa.list_(pa.uint64()), nullable=False),
         pa.field("clicked_source_costs", pa.list_(pa.float64()), nullable=False),
     ]
@@ -52,6 +53,7 @@ def load_validation_requests(path: Path) -> list[dict[str, Any]]:
         "DetailedDeviceType",
         "Age",
         "Gender",
+        "Income",
         "BannerID",
         "SourceCost",
         "IsClick",
@@ -77,6 +79,7 @@ def load_validation_requests(path: Path) -> list[dict[str, Any]]:
                 "device": _text(data["DetailedDeviceType"][row_index]) or None,
                 "age": data["Age"][row_index],
                 "gender": data["Gender"][row_index],
+                "income": data["Income"][row_index],
                 "clicked_banner_ids": [],
                 "clicked_source_costs": [],
             }
@@ -108,6 +111,7 @@ def load_test_requests(path: Path) -> list[dict[str, Any]]:
                 or None,
                 "age": data.get("Age", [None] * len(data["HitLogID"]))[row_index],
                 "gender": data.get("Gender", [None] * len(data["HitLogID"]))[row_index],
+                "income": data.get("Income", [None] * len(data["HitLogID"]))[row_index],
                 "clicked_banner_ids": [],
                 "clicked_source_costs": [],
             }
@@ -162,5 +166,6 @@ def request_example(row: dict[str, Any]) -> dict[str, Any]:
             "device": row.get("device"),
             "age": row.get("age"),
             "gender": row.get("gender"),
+            "income": row.get("income"),
         },
     }

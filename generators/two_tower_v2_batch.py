@@ -33,6 +33,18 @@ def input_schema() -> list[dict[str, Any]]:
         {"name": "device", "path": "context.device", "type": "string", "nullable": True},
         {"name": "age", "path": "context.age", "type": "integer", "nullable": True},
         {"name": "gender", "path": "context.gender", "type": "integer", "nullable": True},
+        {
+            "name": "income",
+            "path": "context.income",
+            "type": "integer",
+            "nullable": True,
+        },
+        {
+            "name": "crypta_id_v2",
+            "path": "context.crypta_id_v2",
+            "type": "integer",
+            "nullable": True,
+        },
     ]
 
 
@@ -97,12 +109,17 @@ def _query_row(example: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     device = str(context.get("device") or "")
     age = max(0, int(context.get("age") or 0))
     gender = max(0, int(context.get("gender") or 0))
+    income_value = context.get("income")
+    income = max(0, int(income_value if income_value is not None else -1) + 1)
+    crypta_id_v2 = max(0, int(context.get("crypta_id_v2") or 0))
     return {
         "query_word_ids": [feature_bucket(token) for token in tokens],
         "region_ids": [feature_bucket(str(region_id))],
         "device_ids": [feature_bucket(device)],
         "age_bucket_ids": [age],
         "gender_ids": [gender],
+        "income_ids": [income],
+        "crypta_id_v2": crypta_id_v2,
         "query_text": normalize(example.get("query")),
         "title_text": "",
         "text_text": "",

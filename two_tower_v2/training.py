@@ -131,7 +131,7 @@ def positive_ids(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return contiguous query and banner identities for one sampled batch."""
 
-    query_ids: dict[tuple[tuple[int, ...], tuple[int, ...]], int] = {}
+    query_ids: dict[tuple[Any, ...], int] = {}
     banner_ids: dict[tuple[str, int], int] = {}
     query_values = []
     banner_values = []
@@ -139,6 +139,11 @@ def positive_ids(
         query_key = (
             tuple(int(value) for value in row.get("query_word_ids") or ()),
             tuple(int(value) for value in row.get("region_ids") or ()),
+            (
+                ("raw_user", int(row["crypta_id_v2"]))
+                if int(row.get("crypta_id_v2") or 0) > 0
+                else ("no_user", 0)
+            ),
         )
         query_values.append(query_ids.setdefault(query_key, len(query_ids)))
         raw_banner_id = int(row.get("banner_id") or 0)

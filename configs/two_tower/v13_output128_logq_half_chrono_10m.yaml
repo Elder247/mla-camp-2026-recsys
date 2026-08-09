@@ -1,0 +1,17 @@
+extends: v8_logq_half_fast_base_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v13_output128_logq_half_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v13_output128_logq_half_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v13-output128-logq-half-chrono-10m
+
+model:
+  # Screen a modest capacity increase; 128D still keeps exact one-million-item
+  # retrieval cheap enough for the several-hour end-to-end budget.
+  hidden_dim: 512
+  output_dim: 128

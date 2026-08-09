@@ -1,0 +1,19 @@
+extends: v8_logq_half_fast_base_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v14_income_logq_half_chrono_10m
+
+paths:
+  weekly_train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_10m_metadata_income_v1
+  train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_10m_metadata_income_v1
+  dataset_artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v14_income_dataset_10m
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v14_income_logq_half_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v14-income-logq-half-chrono-10m
+
+model:
+  query_cardinalities:
+    # Raw values are -1..4. Shift by one so bucket zero represents unknown.
+    income_ids: 8
