@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts.continue_two_tower_oof_winner import selected_variant
+from scripts.continue_two_tower_oof_winner import selected_trial, selected_variant
 
 
 def test_selected_variant_maps_completed_selection(tmp_path) -> None:
@@ -27,3 +27,23 @@ def test_selected_variant_rejects_incomplete_selection(tmp_path) -> None:
 
     with pytest.raises(RuntimeError, match="not completed"):
         selected_variant(path)
+
+
+def test_selected_trial_resolves_full_artifact_and_probe(tmp_path) -> None:
+    path = tmp_path / "selection.json"
+    path.write_text(
+        json.dumps(
+            {
+                "trials": [
+                    {"name": "v6_context_metadata", "artifact": "/a", "probe": "/p"},
+                    {"name": "v7_large_batch", "artifact": "/b", "probe": "/q"},
+                ]
+            }
+        )
+    )
+
+    assert selected_trial(path, "v7_large_batch") == {
+        "name": "v7_large_batch",
+        "artifact": "/b",
+        "probe": "/q",
+    }

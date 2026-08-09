@@ -91,6 +91,127 @@ def selected_variant(selection_path: Path) -> tuple[str, dict]:
     return name, OOF_VARIANTS[name]
 
 
+def selected_trial(selection_path: Path, name: str) -> dict:
+    payload = json.loads(selection_path.read_text(encoding="utf-8"))
+    matches = [trial for trial in payload.get("trials", []) if trial.get("name") == name]
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected one selected trial for {name}, got {len(matches)}")
+    return matches[0]
+
+
+def run_logged(command: list[str], *, log_path: Path) -> float:
+    started = time.monotonic()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Command failed with {result.returncode}: {' '.join(command)}"
+        )
+    return time.monotonic() - started
+
+
+def make_direct_submission(
+    *,
+    selection_path: Path,
+    selected: str,
+    run_id: str,
+    runs: Path,
+    cache: Path,
+    immutable_artifacts: Path,
+) -> dict:
+    trial = selected_trial(selection_path, selected)
+    full_artifact = Path(str(trial["artifact"]))
+    probe = json.loads(Path(str(trial["probe"])).read_text(encoding="utf-8"))
+    probe_run = runs / str(probe["run_id"])
+    direct_run = runs / run_id
+    output = direct_run / "predictions/test_top50_two_tower_geometry.parquet"
+    geometry = direct_run / "metrics/two_tower_geometry.json"
+    log = direct_run / "logs/direct_two_tower_submission.log"
+    common = [
+        "experiment=i2_two_tower_v2_probe",
+        f"run_id={run_id}",
+        "mode=full",
+        "scope=full",
+        f"paths.root={ROOT}",
+        f"paths.runs={runs}",
+        f"paths.cache={cache}",
+        f"paths.immutable_artifacts={immutable_artifacts}",
+        f"paths.two_tower_v2_artifact={full_artifact}",
+    ]
+    timings = {}
+    timings["prepare_data"] = run_logged(
+        [sys.executable, str(ROOT / "scripts/prepare_data.py"), *common],
+        log_path=log,
+    )
+    timings["geometry"] = run_logged(
+        [
+            sys.executable,
+            str(ROOT / "scripts/tune_two_tower_geometry.py"),
+            "--run",
+            str(probe_run),
+            "--artifact",
+            str(full_artifact),
+            "--source",
+            "two_tower_v2",
+            "--output",
+            str(geometry),
+        ],
+        log_path=log,
+    )
+    geometry_report = json.loads(geometry.read_text(encoding="utf-8"))
+    best = geometry_report["best"]
+    timings["generate_test"] = run_logged(
+        [
+            sys.executable,
+            str(ROOT / "scripts/generate_candidates.py"),
+            *common,
+            "split=test",
+            "cg=two_tower_v2",
+        ],
+        log_path=log,
+    )
+    timings["make_submission"] = run_logged(
+        [
+            sys.executable,
+            str(ROOT / "scripts/make_two_tower_submission.py"),
+            "--run",
+            str(direct_run),
+            "--artifact",
+            str(full_artifact),
+            "--source",
+            "two_tower_v2",
+            "--exponent",
+            str(best["exponent"]),
+            "--rerank-top-n",
+            str(best["rerank_top_n"]),
+            "--output",
+            str(output),
+        ],
+        log_path=log,
+    )
+    report = json.loads(
+        (direct_run / "metrics/two_tower_submission.json").read_text(encoding="utf-8")
+    )
+    if report.get("status") != "completed":
+        raise RuntimeError("Direct TwoTower submission contract failed")
+    return {
+        "status": "completed",
+        "run_id": run_id,
+        "probe_run": str(probe_run),
+        "full_artifact": str(full_artifact),
+        "geometry": best,
+        "submission": report,
+        "timings": timings,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wait-pid", type=int, required=True)
@@ -98,6 +219,10 @@ def main() -> int:
     parser.add_argument("--selection", type=Path, required=True)
     parser.add_argument("--decision", type=Path, required=True)
     parser.add_argument("--log", type=Path, required=True)
+    parser.add_argument("--direct-run-id")
+    parser.add_argument("--runs", type=Path)
+    parser.add_argument("--cache", type=Path)
+    parser.add_argument("--immutable-artifacts", type=Path)
     args = parser.parse_args()
     decision = {
         "version": 1,
@@ -110,6 +235,32 @@ def main() -> int:
     try:
         wait_for_process(args.wait_pid, args.timeout_seconds)
         name, variant = selected_variant(args.selection)
+        direct_args = (args.runs, args.cache, args.immutable_artifacts)
+        if args.direct_run_id and not all(direct_args):
+            parser.error(
+                "--runs, --cache and --immutable-artifacts are required with "
+                "--direct-run-id"
+            )
+        if args.direct_run_id:
+            decision.update(status="direct_submission", selected=name)
+            atomic_write_json(args.decision, decision)
+            try:
+                decision["direct_submission"] = make_direct_submission(
+                    selection_path=args.selection,
+                    selected=name,
+                    run_id=args.direct_run_id,
+                    runs=args.runs,
+                    cache=args.cache,
+                    immutable_artifacts=args.immutable_artifacts,
+                )
+            except BaseException as error:
+                # A fast direct leaderboard candidate is valuable but must not
+                # block the leakage-safe OOF/temporal path.
+                decision["direct_submission"] = {
+                    "status": "failed",
+                    "error": str(error),
+                }
+            atomic_write_json(args.decision, decision)
         artifact = Path(variant["artifact"])
         manifest = artifact / "manifest.json"
         if not manifest.is_file():
