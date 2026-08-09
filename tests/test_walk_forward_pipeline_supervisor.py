@@ -20,11 +20,13 @@ def test_pipeline_command_points_code_to_worktree_and_artifacts_to_shared_root()
         output_runs=Path("/shared/runs"),
         cache=Path("/shared/cache"),
         immutable_artifacts=Path("/shared/artifacts"),
+        overrides=["paths.selected_two_tower_walk_forward_artifact=/selected/oof"],
     )
     assert "paths.root=" + str(Path(__file__).resolve().parents[1]) in command
     assert "paths.runs=/shared/runs" in command
     assert "paths.immutable_artifacts=/shared/artifacts" in command
     assert "mode=smoke" in command
+    assert "paths.selected_two_tower_walk_forward_artifact=/selected/oof" in command
 
 
 def test_final_artifact_promotion_is_atomic_and_fingerprinted(tmp_path: Path) -> None:

@@ -67,6 +67,12 @@ def main() -> int:
     parser.add_argument("--output-runs", type=Path, required=True)
     parser.add_argument("--immutable-artifacts", type=Path, required=True)
     parser.add_argument("--poll-seconds", type=int, default=30)
+    parser.add_argument(
+        "--override",
+        action="append",
+        default=[],
+        help="Config override forwarded to both promotion resolution and full run",
+    )
     args = parser.parse_args()
     if args.poll_seconds <= 0:
         parser.error("--poll-seconds must be positive")
@@ -76,6 +82,7 @@ def main() -> int:
         run_id=args.full_run,
         mode="full",
         scope="full",
+        overrides=args.override,
     )
     temporal_path = args.source_runs / args.temporal_run
     decision_path = Path(f"/tmp/{args.full_run}.promotion.json")
@@ -175,6 +182,7 @@ def main() -> int:
         f"paths.immutable_artifacts={args.immutable_artifacts}",
         f"ranker.iterations={full_iterations}",
         f"submission.ranking={selected_ranking}",
+        *args.override,
     ]
     if selected_ranking == "blend" and blend_catboost_weight is not None:
         command.append(

@@ -69,6 +69,7 @@ def pipeline_command(
     output_runs: Path,
     cache: Path,
     immutable_artifacts: Path,
+    overrides: list[str] | None = None,
 ) -> list[str]:
     return [
         str(python),
@@ -81,6 +82,7 @@ def pipeline_command(
         f"paths.runs={output_runs}",
         f"paths.cache={cache}",
         f"paths.immutable_artifacts={immutable_artifacts}",
+        *(overrides or []),
     ]
 
 
@@ -108,6 +110,12 @@ def main() -> int:
     parser.add_argument("--final-artifact-override", type=Path)
     parser.add_argument("--poll-seconds", type=int, default=20)
     parser.add_argument("--max-wait-seconds", type=int, default=7200)
+    parser.add_argument(
+        "--override",
+        action="append",
+        default=[],
+        help="Config override forwarded to temporal, gate and full runs",
+    )
     parser.add_argument(
         "--skip-smoke",
         action="store_true",
@@ -182,6 +190,7 @@ def main() -> int:
             output_runs=args.runs,
             cache=args.cache,
             immutable_artifacts=args.immutable_artifacts,
+            overrides=args.override,
         )
         if completed_run(args.runs / run_id):
             decision["commands"].append(
@@ -279,6 +288,8 @@ def main() -> int:
         "--poll-seconds",
         str(args.poll_seconds),
     ]
+    for override in args.override:
+        promotion.extend(["--override", override])
     promotion_started = time.monotonic()
     return_code = subprocess.run(promotion, cwd=ROOT, check=False).returncode
     decision["commands"].append(
