@@ -822,3 +822,20 @@ LogQ 100M and accepted private result (2026-08-09):
   private SC Recall@50 `0.6545213914`, Recall@50 `0.5348` and Recall@10
   `0.3750`. This is the new accepted personal best, `+0.004458` absolute SC
   Recall@50 over the previous `0.6500635747` result.
+
+Half-strength logQ screen (2026-08-09):
+
+- the only near-equivalent cached neighbour changed the accepted blend's RRF
+  constant from `0` to `5`. It scored private SC Recall@50 `0.6520615664`
+  (entry `283984d38d92`) versus accepted `0.6545213914` and is rejected; no
+  weaker cached neighbours are uploaded;
+- `logq_power=0.5` on 10M processed `2,180,453` examples in `238.6s` at
+  `9.14k rows/s` and exported the one-million-banner index in `84.3s`.
+  Its validation loss/accuracy `1.2269/0.6865` slightly improved over the
+  matching power-1 run `1.2405/0.6850`;
+- against power 1, honest SC Recall@50 improved from `0.540453` to `0.546591`
+  while Recall@50 changed from `0.449586` to `0.448729`; SC Recall@500 changed
+  from `0.690273` to `0.686787`. Oracle-union SC Recall@50 is `0.595069`, mean
+  top-50 Jaccard is `0.415`, and new-only hits carry `0.55%` of total
+  SourceCost. The complementary top-50 gain passes the gate for exactly one
+  100M power-0.5 fit; no other logQ power is promoted concurrently.

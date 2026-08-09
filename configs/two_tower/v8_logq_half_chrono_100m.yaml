@@ -1,0 +1,14 @@
+extends: v8_logq_chrono_100m.yaml
+
+experiment:
+  name: two_tower_v8_logq_half_chrono_100m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v8_logq_half_chrono_100m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v8-logq-half-chrono-100m
+
+training:
+  logq_power: 0.5
