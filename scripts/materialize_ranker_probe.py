@@ -29,6 +29,9 @@ def ranker_probe_semantics(cfg: object) -> dict:
     value = to_plain_dict(cfg)
     value.pop("runtime", None)
     value.pop("ranker", None)
+    # Submission ranking is produced after the reused feature contract.
+    value.pop("submission", None)
+    value.pop("promotion_gate", None)
     candidates = dict(value.get("candidates") or {})
     candidates.pop("reuse_run", None)
     value["candidates"] = candidates

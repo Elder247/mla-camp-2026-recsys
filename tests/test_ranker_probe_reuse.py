@@ -20,6 +20,7 @@ def config(*, loss: str, feature_version: str = "f1", reuse: str | None = None):
         {
             "runtime": {"run_id": "run", "resume": True, "scope": "offline"},
             "ranker": {"loss_function": loss},
+            "submission": {"ranking": "catboost"},
             "candidates": {"reuse_run": reuse, "rrf_constant": 40},
             "features": {"reuse_run": reuse, "version": feature_version},
             "data": {"partition_count": 2},
@@ -30,6 +31,14 @@ def config(*, loss: str, feature_version: str = "f1", reuse: str | None = None):
 def test_ranker_loss_and_reuse_paths_do_not_change_upstream_semantics() -> None:
     donor = config(loss="YetiRankPairwise")
     probe = config(loss="QueryRMSE", reuse="/donor")
+
+    assert ranker_probe_semantics(donor) == ranker_probe_semantics(probe)
+
+
+def test_submission_ranking_does_not_change_upstream_semantics() -> None:
+    donor = config(loss="YetiRankPairwise")
+    probe = config(loss="QueryRMSE")
+    probe.submission.ranking = "value_geometry"
 
     assert ranker_probe_semantics(donor) == ranker_probe_semantics(probe)
 
