@@ -56,6 +56,7 @@ candidates:
 features:
   version: feature_v1
   reuse_run: null
+  reuse_history_patch: false
   enabled: []
   counter_version: click_events_asof_v1
   counter_windows_days: []

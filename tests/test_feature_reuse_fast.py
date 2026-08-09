@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 from omegaconf import OmegaConf
 
 import scripts.build_features as build_features
@@ -45,3 +48,50 @@ def test_feature_reuse_runs_before_heavy_worker_initialization(
     assert calls == [0, 1, 2]
     assert results is not None
     assert [stats["reused"] for _, stats in results] == [1, 1, 1]
+
+
+def test_history_patch_replaces_only_history_features(tmp_path: Path) -> None:
+    donor = tmp_path / "donor.parquet"
+    merged = tmp_path / "merged.parquet"
+    output = tmp_path / "output.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "request_id": ["r1", "r1"],
+                "banner_id": pa.array([1, 2], type=pa.uint64()),
+                "untouched": pa.array([7.0, 8.0], type=pa.float32()),
+                "history_click_count_log1p": pa.array([0.0, 0.0], type=pa.float32()),
+                "history_source_cost_log1p": pa.array([0.0, 0.0], type=pa.float32()),
+                "history_query_present": pa.array([0.0, 0.0], type=pa.float32()),
+                "history_region_present": pa.array([0.0, 0.0], type=pa.float32()),
+            }
+        ),
+        donor,
+    )
+    pq.write_table(
+        pa.table(
+            {
+                "request_id": ["r1", "r1"],
+                "banner_id": pa.array([1, 2], type=pa.uint64()),
+                "history_click_count": pa.array([4, 0], type=pa.int64()),
+                "history_source_cost_sum": [500.0, 0.0],
+                "history_query_present": [True, False],
+                "history_region_present": [True, False],
+            }
+        ),
+        merged,
+    )
+
+    build_features._patch_history_feature_columns(
+        donor_output=donor,
+        merged_path=merged,
+        output=output,
+    )
+
+    actual = pq.read_table(output).to_pydict()
+    assert pq.read_table(output).schema == pq.read_table(donor).schema
+    assert actual["untouched"] == [7.0, 8.0]
+    assert np.isclose(actual["history_click_count_log1p"][0], np.log1p(4.0))
+    assert np.isclose(actual["history_source_cost_log1p"][0], np.log1p(500.0))
+    assert actual["history_query_present"] == [1.0, 0.0]
+    assert actual["history_region_present"] == [1.0, 0.0]

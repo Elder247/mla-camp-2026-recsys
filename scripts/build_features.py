@@ -10,6 +10,8 @@ import tempfile
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 from omegaconf import OmegaConf
 
@@ -58,7 +60,66 @@ def _feature_config_without_reuse(cfg: object) -> dict:
     value = OmegaConf.to_container(cfg.features, resolve=True)
     assert isinstance(value, dict)
     value.pop("reuse_run", None)
+    value.pop("reuse_history_patch", None)
     return value
+
+
+def _patch_history_feature_columns(
+    *, donor_output: Path, merged_path: Path, output: Path
+) -> object:
+    """Reuse immutable features while replacing the four fixed history columns.
+
+    This path is intentionally narrow: row identity/order must match exactly,
+    and only statistics already persisted by the new merge are transformed.
+    """
+    table = pq.read_table(donor_output)
+    merged = pq.read_table(
+        merged_path,
+        columns=[
+            "request_id",
+            "banner_id",
+            "history_click_count",
+            "history_source_cost_sum",
+            "history_query_present",
+            "history_region_present",
+        ],
+    )
+    if table.num_rows != merged.num_rows:
+        raise ValueError("History patch row count differs from donor features")
+    for identity in ("request_id", "banner_id"):
+        if not table[identity].equals(merged[identity]):
+            raise ValueError(f"History patch row identity mismatch: {identity}")
+    clicks = merged["history_click_count"].combine_chunks().to_numpy(
+        zero_copy_only=False
+    )
+    source_cost = merged["history_source_cost_sum"].combine_chunks().to_numpy(
+        zero_copy_only=False
+    )
+    replacements = {
+        "history_click_count_log1p": np.log1p(
+            np.maximum(clicks.astype(np.float64, copy=False), 0.0)
+        ),
+        "history_source_cost_log1p": np.log1p(
+            np.maximum(source_cost.astype(np.float64, copy=False), 0.0)
+        ),
+        "history_query_present": merged["history_query_present"],
+        "history_region_present": merged["history_region_present"],
+    }
+    for name, values in replacements.items():
+        index = table.schema.get_field_index(name)
+        if index < 0:
+            raise ValueError(f"History patch feature is absent: {name}")
+        array = (
+            values.cast(pa.float32())
+            if isinstance(values, pa.ChunkedArray)
+            else pa.array(values, type=pa.float32())
+        )
+        # Passing the original field (rather than only its name) preserves the
+        # exact nullability contract expected by feature_schema().
+        table = table.set_column(index, table.schema.field(index), array)
+    with atomic_output_path(output) as temporary:
+        pq.write_table(table, temporary, compression="zstd")
+    return table
 
 
 def _table_stats(table: object) -> dict[str, int]:
@@ -110,11 +171,11 @@ def _try_reuse_feature_partition(
     donor_inputs = donor_manifest.get("inputs")
     if not isinstance(donor_inputs, list) or len(donor_inputs) != len(inputs):
         return None
-    if any(
-        _fingerprint_content(current) != _fingerprint_content(previous)
-        for current, previous in zip(inputs, donor_inputs)
-    ):
-        return None
+    mismatches = [
+        index
+        for index, (current, previous) in enumerate(zip(inputs, donor_inputs))
+        if _fingerprint_content(current) != _fingerprint_content(previous)
+    ]
     valid, _ = validate_output_cache(
         donor_output,
         expected_cache_key=str(donor_manifest.get("cache_key")),
@@ -122,11 +183,26 @@ def _try_reuse_feature_partition(
     )
     if not valid:
         return None
-    _materialize_file(donor_output, output)
-    table = pq.read_table(
-        output,
-        columns=["group_has_positive", "is_positive", "request_id"],
-    )
+    patched = False
+    if mismatches:
+        if mismatches != [1] or not bool(cfg.features.get("reuse_history_patch", False)):
+            return None
+        merged_path = (
+            _FEATURE_STATE["run_path"]
+            / "candidates"
+            / _FEATURE_STATE["split"]
+            / "merged"
+            / output.name
+        )
+        table = _patch_history_feature_columns(
+            donor_output=donor_output,
+            merged_path=merged_path,
+            output=output,
+        )
+        patched = True
+    else:
+        _materialize_file(donor_output, output)
+        table = pq.read_table(output)
     write_output_manifest(
         output,
         stage=f"build_features_{_FEATURE_STATE['split']}_{partition}",
@@ -137,7 +213,7 @@ def _try_reuse_feature_partition(
         schema=str(feature_schema(cfg)),
         scope=str(cfg.runtime.scope),
     )
-    return _table_stats(table)
+    return {**_table_stats(table), "history_patched": int(patched)}
 
 
 def _preinitialize_feature_reuse(
@@ -331,6 +407,7 @@ def main() -> int:
         "missed_positive_groups": 0,
         "rows": 0,
         "reused": 0,
+        "history_patched": 0,
     }
     cfg_dict = to_plain_dict(cfg)
     workers = max(1, int(cfg.pipeline.get("feature_partition_workers", 1)))
@@ -389,7 +466,7 @@ def main() -> int:
     for partition in range(partitions):
         stats = stats_by_partition[partition]
         for key in totals:
-            totals[key] += int(stats[key])
+            totals[key] += int(stats.get(key, 0))
         partition_rows.append(int(stats["rows"]))
     report = {
         "split": split,
