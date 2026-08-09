@@ -839,3 +839,40 @@ Half-strength logQ screen (2026-08-09):
   top-50 Jaccard is `0.415`, and new-only hits carry `0.55%` of total
   SourceCost. The complementary top-50 gain passes the gate for exactly one
   100M power-0.5 fit; no other logQ power is promoted concurrently.
+
+Half-strength logQ 100M/private result (2026-08-09):
+
+- the promoted model processed all `21,813,184` chronological examples in
+  `2396.5s` at `9.10k rows/s`; one-million-banner export took `84.8s`.
+  Data wait was `31.2%`, peak GPU allocation was `2.27 GB`, and peak RSS was
+  `2.56 GB`;
+- its honest SC Recall@50/500 were `0.629096/0.729742`, versus
+  `0.634545/0.724169` for power 1. Recall@50 was `0.539846` versus `0.548129`.
+  The top-50 oracle union reached `0.655003` SC Recall with mean Jaccard
+  `0.497`; new-only hits contributed `0.150%` of total SourceCost;
+- a two-half gate selected `65%` of the accepted-best proxy and `35%` of the
+  half-strength source, RRF constant `10`, SourceCost exponent `0.15` and
+  rerank top `75`. Early/late/full temporal gains were
+  `+0.000762/+0.000607/+0.000690`;
+- validation full-fit and test inference took `91.83s/34.19s`; materialization
+  took `4.04s`. The output passed 10,000 unique HitLogIDs, exactly 50 unique
+  indexed non-null banners per row, and has full SHA-256
+  `596b03087f5e86e82be54b1ba6ca58f49dd4e54e14156755e7f9295cee85e3fb`;
+- leaderboard entry `188edcb5bfa2` scored private SC Recall@50
+  `0.6532185375`, Recall@50 `0.5325` and Recall@10 `0.3704`. It is rejected
+  below the accepted power-1 blend at `0.6545213914`; the 100M artifact remains
+  useful only as a complementary candidate source.
+
+Next fast TwoTower screens (2026-08-09):
+
+- commit `2e977dc` adds config-isolated 10M screens for batch size `8192`,
+  SourceCost weight power `0.75`, a one-million-bucket second BannerID hash,
+  128D output, two hashed CryptaID user embeddings, and the previously unused
+  six-category Income context. The full test suite passed `180/180` and the
+  Income YQL validated without creating or replacing a table;
+- the existing loader spent `31.2%` of wall time waiting for YT. All new
+  screens use an order-preserving two-batch prefetch, already used by the OOF
+  trainer, so data reads overlap GPU work without changing model semantics;
+- the six trials run sequentially and detached. Only an honest SC/Recall and
+  complementarity winner can enter one combined 10M check and at most one
+  subsequent 100M fit.
