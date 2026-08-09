@@ -25,9 +25,17 @@ TEMPORAL_SOURCES = {
     "history_query_region_oof_v1": "query_region_sc",
     "history_query_recent_v1": "query_sc",
     "history_query_region_recent_v1": "query_region_sc",
+    "history_query_mean_sc_v1": "query_sc",
+    "history_query_region_mean_sc_v1": "query_region_sc",
 }
 
-SCORE_MODES = {"auto", "source_cost", "recency", "clicks"}
+SCORE_MODES = {
+    "auto",
+    "source_cost",
+    "mean_source_cost",
+    "recency",
+    "clicks",
+}
 
 
 @dataclass
@@ -112,6 +120,8 @@ class TemporalHistoryState:
             return float(item.clicks)
         if self.score_mode == "source_cost":
             return item.source_cost_sum
+        if self.score_mode == "mean_source_cost":
+            return item.source_cost_sum / item.clicks if item.clicks else 0.0
         if self.family in {"user", "query_sc", "query_region_sc"}:
             return item.source_cost_sum
         support = item.clicks / (item.clicks + self.bayes_prior)

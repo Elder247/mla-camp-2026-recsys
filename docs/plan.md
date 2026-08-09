@@ -427,7 +427,7 @@ Fast QueryRMSE full/private evidence (`20260809_0450_i2_qrmse_full`):
   SC Recall@50 `0.6206`, Recall@50 `0.5079` and Recall@10 `0.3647`. It is the
   new accepted personal best (`+0.22 pp` SC over `0.6184`).
 
-Recency-history 10M gate (in progress):
+Recency-history 10M gate (`20260809_0515_i2_recent10m_temporal`):
 
 - 1M remains a code/schema smoke; the first metric-bearing experiment uses
   the existing 10M walk-forward OOF artifact and reuses unchanged TF-IDF and
@@ -441,3 +441,19 @@ Recency-history 10M gate (in progress):
   candidate ceiling `0.694238` and best blend SC Recall@50 `0.617587`, plus
   positive source complementarity; only then is the hypothesis repeated on
   100M/full data.
+- the next already bounded fallback is mean historical SourceCost per click.
+  It removes the frequency multiplier present in summed SourceCost while
+  retaining the same past-only state; it will run on 10M only if recency alone
+  is not sufficient for direct promotion.
+- the complete run took `15m07s`; cache parity passed `40/40` with zero
+  mismatches and feature row counts are `7,499,400/2,100,000` for
+  train/holdout. TF-IDF reused in about 14 seconds, TwoTower inference took
+  `258/75s`, feature construction `262/104s`, and the single QueryRMSE fit
+  `35s`;
+- recency query/query-region standalone SC Recall@50 is
+  `0.416359/0.195767`, below summed SourceCost `0.441894/0.197284`. The merged
+  candidate ceiling is `0.694285` at 500, effectively unchanged from the
+  matched `0.694238` baseline;
+- the cached blend/geometry probes peak at SC Recall@50
+  `0.611230/0.613980`, below the old 10M blend `0.617587`. Recency is rejected
+  and is not promoted to 100M; the next 10M run tests mean SourceCost per click.

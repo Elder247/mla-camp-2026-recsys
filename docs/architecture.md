@@ -100,12 +100,13 @@ SourceCost, and exact query-region ordered by direct SourceCost. Query-region
 has no implicit query-only fallback, so its complementarity is measurable.
 
 Temporal query and exact query-region history also support independent
-recency-ranked variants. They use the same strictly-past state and candidate
-universe as the SourceCost variants, but order banners by the last event time.
-The score policy is an explicit `score_mode` in experiment config; adding a
-variant therefore cannot silently change an existing generator. Both variants
-are disabled by default and must pass the 10M complementarity/SC gate before a
-100M confirmation.
+recency-ranked and mean-SourceCost variants. They use the same strictly-past
+state and candidate universe as the summed-SourceCost variants, but order
+banners by the last event time or SourceCost per historical click. The score
+policy is an explicit `score_mode` in experiment config; adding a variant
+therefore cannot silently change an existing generator. Variants are disabled
+by default and must pass the 10M complementarity/SC gate before a 100M
+confirmation.
 
 User, region and global sources are native run-scoped generators. For `train`
 and `full_train`, they rank from state observed at strictly earlier timestamps;

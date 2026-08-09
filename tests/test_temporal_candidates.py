@@ -268,3 +268,23 @@ def test_query_history_uses_canonical_candidate_provenance() -> None:
 
     assert row["history_query_present"] is True
     assert row["history_region_present"] is False
+
+
+def test_mean_source_cost_mode_does_not_reward_frequency_alone() -> None:
+    state = TemporalHistoryState(
+        "history_query_mean_sc_v1",
+        min_clicks=1,
+        bayes_prior=0.0,
+        score_mode="mean_source_cost",
+    )
+    frequent = request("1", 100, 10)
+    frequent["clicked_source_costs"] = [10.0]
+    state.observe(frequent)
+    state.observe({**frequent, "request_id": "2", "show_time": 101})
+    rare_valuable = request("3", 102, 20)
+    rare_valuable["clicked_source_costs"] = [15.0]
+    state.observe(rare_valuable)
+
+    ranked = state.rank(request("4", 200, 30), top_k=2)
+
+    assert [row["banner_id"] for row in ranked] == [20, 10]
