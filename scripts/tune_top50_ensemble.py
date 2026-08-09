@@ -217,10 +217,8 @@ def main() -> int:
     }
 
     base_results = []
-    base_orders = {}
     for weights in simplex_weights(len(sources), args.weight_step):
         for constant in float_grid(args.rrf_constants):
-            key = (weights, constant)
             orders = {
                 hit_log_id: fuse_rankings(
                     [source.get(hit_log_id, []) for source in sources],
@@ -231,7 +229,6 @@ def main() -> int:
                 )
                 for hit_log_id in all_ids
             }
-            base_orders[key] = orders
             base_results.append(
                 {
                     "weights": weights,
@@ -251,6 +248,16 @@ def main() -> int:
     top_ns = int_grid(args.geometry_top_n)
     for base in base_results[: args.refine_top]:
         key = (tuple(base["weights"]), float(base["rrf_constant"]))
+        base_order = {
+            hit_log_id: fuse_rankings(
+                [source.get(hit_log_id, []) for source in sources],
+                key[0],
+                rrf_constant=key[1],
+                hit_log_id=hit_log_id,
+                source_costs=source_costs,
+            )
+            for hit_log_id in all_ids
+        }
         for exponent in exponents:
             for top_n in ([max(top_ns)] if exponent == 0.0 else top_ns):
                 orders = {
@@ -260,7 +267,7 @@ def main() -> int:
                         exponent=exponent,
                         rerank_top_n=top_n,
                     )
-                    for hit_log_id, order in base_orders[key].items()
+                    for hit_log_id, order in base_order.items()
                 }
                 refined.append(
                     {
