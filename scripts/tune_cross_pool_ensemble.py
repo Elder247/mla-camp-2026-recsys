@@ -60,6 +60,7 @@ def ranked_pool(
     catboost_weight: float,
     exponent: float,
     rerank_top_n: int,
+    split: str = "holdout",
 ) -> dict[str, list[Ranked]]:
     model_a, names_a = load_model(model_a_run)
     model_b, names_b = load_model(model_b_run)
@@ -79,7 +80,7 @@ def ranked_pool(
             ]
         )
     )
-    for path in sorted((run / "features" / "holdout").glob("part-*.parquet")):
+    for path in sorted((run / "features" / split).glob("part-*.parquet")):
         table = pq.read_table(path, columns=columns)
         values = matrix(table, names)
         scores_a = np.asarray(model_a.predict(values), dtype=np.float64)
@@ -211,6 +212,7 @@ def main() -> int:
         catboost_weight=args.old_catboost_weight,
         exponent=args.old_exponent,
         rerank_top_n=args.old_top_n,
+        split="holdout",
     )
     new = ranked_pool(
         run=args.new_run,
@@ -220,6 +222,7 @@ def main() -> int:
         catboost_weight=args.new_catboost_weight,
         exponent=args.new_exponent,
         rerank_top_n=args.new_top_n,
+        split="holdout",
     )
     if set(old) != set(new):
         raise ValueError("Cross-pool runs cover different requests")
