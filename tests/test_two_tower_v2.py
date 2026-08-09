@@ -325,6 +325,18 @@ def test_v7_uses_more_in_batch_negatives() -> None:
         ROOT / "configs" / "two_tower" / "v7_large_batch_walk_forward_100m_s10.yaml"
     )
     assert walk_forward.training.prefetch_batches == 2
+    full_fit = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v7_large_batch_chrono100m_valfit_full.yaml"
+    )
+    assert full_fit.finetune.scope == "full"
+    assert full_fit.finetune.expected_rows == 10000
+    assert full_fit.finetune.batch_size == 4096
+    assert full_fit.paths.base_artifact.endswith(
+        "two_tower_v7_large_batch_chrono_100m_model"
+    )
 
 
 def test_prefetch_preserves_order_and_propagates_reader_errors() -> None:

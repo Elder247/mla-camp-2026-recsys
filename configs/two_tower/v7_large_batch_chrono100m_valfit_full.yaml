@@ -1,0 +1,17 @@
+extends: v3_bpe_multipos_chrono100m_valfit_full.yaml
+
+experiment:
+  name: two_tower_v7_large_batch_chrono100m_valfit_full
+
+paths:
+  base_artifact: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_chrono_100m_model
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_chrono100m_valfit_full
+
+tracking:
+  underdeep:
+    run_name: two-tower-v7-large-batch-chrono100m-valfit-full
+
+finetune:
+  # Full validation fit is test-only and is never used for the honest probe or
+  # OOF temporal gate.
+  batch_size: 4096

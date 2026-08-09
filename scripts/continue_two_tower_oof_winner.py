@@ -125,9 +125,11 @@ def make_direct_submission(
     runs: Path,
     cache: Path,
     immutable_artifacts: Path,
+    direct_artifact: Path | None = None,
 ) -> dict:
     trial = selected_trial(selection_path, selected)
-    full_artifact = Path(str(trial["artifact"]))
+    base_full_artifact = Path(str(trial["artifact"]))
+    full_artifact = direct_artifact or base_full_artifact
     probe = json.loads(Path(str(trial["probe"])).read_text(encoding="utf-8"))
     probe_run = runs / str(probe["run_id"])
     direct_run = runs / run_id
@@ -205,6 +207,7 @@ def make_direct_submission(
         "status": "completed",
         "run_id": run_id,
         "probe_run": str(probe_run),
+        "base_full_artifact": str(base_full_artifact),
         "full_artifact": str(full_artifact),
         "geometry": best,
         "submission": report,
@@ -223,6 +226,11 @@ def main() -> int:
     parser.add_argument("--runs", type=Path)
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--immutable-artifacts", type=Path)
+    parser.add_argument(
+        "--direct-artifact-config",
+        type=Path,
+        help="Optional test-only full-validation fine-tune config",
+    )
     args = parser.parse_args()
     decision = {
         "version": 1,
@@ -245,6 +253,27 @@ def main() -> int:
             decision.update(status="direct_submission", selected=name)
             atomic_write_json(args.decision, decision)
             try:
+                direct_artifact = None
+                if args.direct_artifact_config:
+                    from scripts.finetune_two_tower_validation import load_config
+
+                    fit_cfg = load_config(args.direct_artifact_config.resolve())
+                    direct_artifact = Path(str(fit_cfg.paths.artifact_dir))
+                    if not (direct_artifact / "manifest.json").is_file():
+                        decision.update(
+                            status="direct_artifact_training",
+                            direct_artifact=str(direct_artifact),
+                        )
+                        atomic_write_json(args.decision, decision)
+                        run_logged(
+                            [
+                                sys.executable,
+                                str(ROOT / "scripts/finetune_two_tower_validation.py"),
+                                "--config",
+                                str(args.direct_artifact_config.resolve()),
+                            ],
+                            log_path=args.log,
+                        )
                 decision["direct_submission"] = make_direct_submission(
                     selection_path=args.selection,
                     selected=name,
@@ -252,6 +281,7 @@ def main() -> int:
                     runs=args.runs,
                     cache=args.cache,
                     immutable_artifacts=args.immutable_artifacts,
+                    direct_artifact=direct_artifact,
                 )
             except BaseException as error:
                 # A fast direct leaderboard candidate is valuable but must not
