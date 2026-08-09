@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from two_tower_v2.data import (  # noqa: E402
     enrich_rows,
     pack_bags,
+    piecewise_linear_ids_weights,
     prefetch_batches,
     source_fields,
     wide_feature_bucket,
@@ -39,6 +41,54 @@ def test_embedding_dimension_uses_formula_rounding_and_caps() -> None:
     assert embedding_dimension(16, **kwargs) == 16
     assert embedding_dimension(65_536, **kwargs) == 96
     assert embedding_dimension(10**9, **kwargs) == 96
+
+
+def test_piecewise_numeric_encoding_interpolates_and_saturates() -> None:
+    ids, weights = piecewise_linear_ids_weights(
+        math.e**1.5 - 1.0,
+        cardinality=8,
+        log1p_scale=1.0,
+    )
+    assert ids == [1, 2]
+    assert weights == pytest.approx([0.5, 0.5])
+    assert sum(weights) == pytest.approx(1.0)
+    assert piecewise_linear_ids_weights(
+        1e30,
+        cardinality=8,
+        log1p_scale=1.0,
+    ) == ([7], [1.0])
+
+
+def test_piecewise_bags_use_weighted_sum_and_text_multihash() -> None:
+    rows = enrich_rows(
+        [
+            {
+                "query_text": "red shoes",
+                "title_text": "red shoes sale",
+                "text_text": "",
+                "source_cost": math.e**1.5 - 1.0,
+            }
+        ],
+        cardinalities={
+            "query_word_hash2_ids": 1024,
+            "title_word_hash2_ids": 1024,
+            "source_cost_piecewise_ids": 8,
+        },
+        tokenizer=None,
+        bpe_limits={"query_word_ids": 2, "title_word_ids": 3},
+    )
+    assert len(rows[0]["query_word_hash2_ids"]) == 2
+    assert len(rows[0]["title_word_hash2_ids"]) == 3
+    assert rows[0]["source_cost_piecewise_ids"] == [1, 2]
+    bags = pack_bags(
+        rows,
+        cardinalities={"source_cost_piecewise_ids": 8},
+        device=torch.device("cpu"),
+    )
+    assert len(bags["source_cost_piecewise_ids"]) == 3
+    assert bags["source_cost_piecewise_ids"][2].tolist() == pytest.approx(
+        [0.5, 0.5]
+    )
 
 
 def test_four_cross_three_deep_towers_produce_normalized_vectors() -> None:
@@ -559,6 +609,39 @@ def test_v15_combines_only_temporally_accepted_logq_screens() -> None:
     assert full.model.output_dim == combined.model.output_dim
     assert full.model.query_cardinalities == combined.model.query_cardinalities
     assert full.model.banner_cardinalities.banner_id_hash2_ids == 1_048_576
+
+
+def test_v16_adds_multihash_and_piecewise_inputs_without_changing_objective() -> None:
+    baseline = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v15_combined_logq_half_chrono_10m.yaml"
+    )
+    trial = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v16_multihash_piecewise_logq_half_chrono_10m.yaml"
+    )
+    assert trial.training.logq_power == baseline.training.logq_power == 0.5
+    assert trial.training.batch_size == baseline.training.batch_size
+    assert trial.model.query_cardinalities.query_word_hash2_ids == 65_536
+    assert trial.model.banner_cardinalities.title_word_hash2_ids == 65_536
+    assert trial.model.banner_cardinalities.text_word_hash2_ids == 65_536
+    assert trial.model.banner_cardinalities.source_cost_piecewise_ids == 32
+    assert trial.model.banner_cardinalities.product_price_piecewise_ids == 32
+    assert trial.numeric_features.source_cost_piecewise_log1p_scale == 1.5
+
+    full = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v16_multihash_piecewise_logq_half_chrono_100m.yaml"
+    )
+    assert full.paths.train_table.endswith("train_clicks_100m_metadata_v1")
+    assert full.model.query_cardinalities == trial.model.query_cardinalities
+    assert full.model.banner_cardinalities == trial.model.banner_cardinalities
 
 
 def test_v7_uses_more_in_batch_negatives() -> None:

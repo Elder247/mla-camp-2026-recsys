@@ -319,6 +319,12 @@ def evaluate(
             product_price_log1p_scale=numeric_feature_scale(
                 cfg, "product_price_log1p_scale"
             ),
+            source_cost_piecewise_log1p_scale=numeric_feature_scale(
+                cfg, "source_cost_piecewise_log1p_scale"
+            ),
+            product_price_piecewise_log1p_scale=numeric_feature_scale(
+                cfg, "product_price_piecewise_log1p_scale"
+            ),
         )
         bags = pack_bags(batch, cardinalities=cardinalities, device=device)
         with torch.autocast(
@@ -439,6 +445,12 @@ def train_model(
                 ),
                 product_price_log1p_scale=numeric_feature_scale(
                     cfg, "product_price_log1p_scale"
+                ),
+                source_cost_piecewise_log1p_scale=numeric_feature_scale(
+                    cfg, "source_cost_piecewise_log1p_scale"
+                ),
+                product_price_piecewise_log1p_scale=numeric_feature_scale(
+                    cfg, "product_price_piecewise_log1p_scale"
                 ),
             )
             bags = pack_bags(batch, cardinalities=cardinalities, device=device)
@@ -673,6 +685,12 @@ def export_candidates(
                 ),
                 product_price_log1p_scale=numeric_feature_scale(
                     cfg, "product_price_log1p_scale"
+                ),
+                source_cost_piecewise_log1p_scale=numeric_feature_scale(
+                    cfg, "source_cost_piecewise_log1p_scale"
+                ),
+                product_price_piecewise_log1p_scale=numeric_feature_scale(
+                    cfg, "product_price_piecewise_log1p_scale"
                 ),
             )
             bags = pack_bags(

@@ -4,6 +4,7 @@ import hashlib
 import math
 import queue
 import random
+import re
 import threading
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
@@ -23,6 +24,11 @@ TEXT_SOURCE_FIELDS = ("query_text", "title_text", "text_text", "banner_url")
 NUMERIC_SOURCE_FIELDS = ("source_cost", "product_price")
 INTEGER_SOURCE_FIELDS = ("banner_id", "crypta_id_v2")
 BPE_FIELDS = ("query_bpe_ids", "title_bpe_ids", "text_bpe_ids")
+TEXT_HASH_FIELDS = {
+    "query_word_hash2_ids": ("query_text", "query_hash2"),
+    "title_word_hash2_ids": ("title_text", "title_hash2"),
+    "text_word_hash2_ids": ("text_text", "text_hash2"),
+}
 DIRECT_SOURCE_FIELDS = (
     "device_ids",
     "age_bucket_ids",
@@ -39,8 +45,11 @@ DERIVED_FIELDS = (
     "crypta_id_hash2_ids",
     "source_cost_bucket_ids",
     "product_price_bucket_ids",
+    "source_cost_piecewise_ids",
+    "product_price_piecewise_ids",
     "url_domain_ids",
     "banner_id_hash2_ids",
+    *TEXT_HASH_FIELDS,
 )
 
 
@@ -50,10 +59,19 @@ def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
     fields = list(ALL_FIELDS)
     if any(name in cardinalities for name in BPE_FIELDS):
         fields.extend(TEXT_SOURCE_FIELDS[:3])
+    for feature_name, (text_name, _) in TEXT_HASH_FIELDS.items():
+        if feature_name in cardinalities:
+            fields.append(text_name)
     fields.extend(name for name in DIRECT_SOURCE_FIELDS if name in cardinalities)
-    if "source_cost_bucket_ids" in cardinalities:
+    if any(
+        name in cardinalities
+        for name in ("source_cost_bucket_ids", "source_cost_piecewise_ids")
+    ):
         fields.append("source_cost")
-    if "product_price_bucket_ids" in cardinalities:
+    if any(
+        name in cardinalities
+        for name in ("product_price_bucket_ids", "product_price_piecewise_ids")
+    ):
         fields.append("product_price")
     if "url_domain_ids" in cardinalities:
         fields.append("banner_url")
@@ -64,7 +82,7 @@ def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
         for name in ("crypta_id_hash1_ids", "crypta_id_hash2_ids")
     ):
         fields.append("crypta_id_v2")
-    return tuple(fields)
+    return tuple(dict.fromkeys(fields))
 
 
 def _source_value(raw: Mapping[str, Any], name: str) -> Any:
@@ -85,6 +103,34 @@ def feature_bucket(value: str) -> int:
 def wide_feature_bucket(value: str) -> int:
     digest = hashlib.md5(value.encode("utf-8")).digest()
     return int.from_bytes(digest[:8], "little", signed=False)
+
+
+def _word_tokens(value: object) -> list[str]:
+    return re.findall(r"[0-9a-zа-яё]+", str(value or "").lower())
+
+
+def piecewise_linear_ids_weights(
+    value: float,
+    *,
+    cardinality: int,
+    log1p_scale: float,
+) -> tuple[list[int], list[float]]:
+    """Encode a non-negative scalar by linear interpolation between knots."""
+
+    if cardinality < 2:
+        raise ValueError("piecewise cardinality must be at least two")
+    if log1p_scale <= 0.0:
+        raise ValueError("piecewise log1p scale must be positive")
+    position = min(
+        float(cardinality - 1),
+        math.log1p(max(0.0, float(value))) * float(log1p_scale),
+    )
+    lower = int(math.floor(position))
+    upper = min(cardinality - 1, lower + 1)
+    if lower == upper:
+        return [lower], [1.0]
+    upper_weight = position - lower
+    return [lower, upper], [1.0 - upper_weight, upper_weight]
 
 
 def deterministic_sample(value: object, *, fraction: float, seed: int) -> bool:
@@ -231,6 +277,8 @@ def enrich_rows(
     bpe_limits: Mapping[str, int] | None = None,
     source_cost_log1p_scale: float = 1.0,
     product_price_log1p_scale: float = 1.0,
+    source_cost_piecewise_log1p_scale: float = 1.0,
+    product_price_piecewise_log1p_scale: float = 1.0,
 ) -> list[dict[str, Any]]:
     """Add config-gated BPE and query-region inputs without changing YT data."""
 
@@ -254,6 +302,23 @@ def enrich_rows(
         for row, item in zip(enriched, encoded):
             ids = item.ids[:limit] if limit > 0 else item.ids
             row[feature_name] = [int(value) % cardinality for value in ids]
+
+    for feature_name, (text_name, namespace) in TEXT_HASH_FIELDS.items():
+        if feature_name not in cardinalities:
+            continue
+        cardinality = int(cardinalities[feature_name])
+        if cardinality <= 1:
+            raise ValueError(f"{feature_name} cardinality must exceed one")
+        limit_name = feature_name.replace("_hash2_", "_")
+        limit = int(limits.get(limit_name, 0))
+        for row in enriched:
+            tokens = _word_tokens(row.get(text_name))
+            if limit > 0:
+                tokens = tokens[:limit]
+            row[feature_name] = [
+                wide_feature_bucket(f"{namespace}:{token}") % cardinality
+                for token in tokens
+            ]
 
     if "query_region_ids" in cardinalities:
         cardinality = int(cardinalities["query_region_ids"])
@@ -305,6 +370,28 @@ def enrich_rows(
                 int(math.log1p(price) * product_price_log1p_scale),
             )
             row["product_price_bucket_ids"] = [bucket]
+    for feature_name, source_name, scale in (
+        (
+            "source_cost_piecewise_ids",
+            "source_cost",
+            source_cost_piecewise_log1p_scale,
+        ),
+        (
+            "product_price_piecewise_ids",
+            "product_price",
+            product_price_piecewise_log1p_scale,
+        ),
+    ):
+        if feature_name not in cardinalities:
+            continue
+        for row in enriched:
+            ids, weights = piecewise_linear_ids_weights(
+                float(row.get(source_name) or 0.0),
+                cardinality=int(cardinalities[feature_name]),
+                log1p_scale=float(scale),
+            )
+            row[feature_name] = ids
+            row[f"{feature_name}__weights"] = weights
     if "url_domain_ids" in cardinalities:
         cardinality = int(cardinalities["url_domain_ids"])
         for row in enriched:
@@ -406,21 +493,33 @@ def prefetch_batches(
 
 
 def pack_bags(
-    rows: Sequence[Mapping[str, Sequence[int]]],
+    rows: Sequence[Mapping[str, Any]],
     *,
     cardinalities: Mapping[str, int],
     device: torch.device,
-) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
-    packed: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+) -> dict[str, tuple[torch.Tensor, ...]]:
+    packed: dict[str, tuple[torch.Tensor, ...]] = {}
     for name, cardinality in cardinalities.items():
         values: list[int] = []
         offsets: list[int] = []
+        sample_weights: list[float] = []
+        weighted = name.endswith("_piecewise_ids")
         for row in rows:
             offsets.append(len(values))
             raw = row.get(name) or (0,)
             values.extend(int(value) % int(cardinality) for value in raw)
-        packed[name] = (
+            if weighted:
+                weights = row.get(f"{name}__weights") or (1.0,) * len(raw)
+                if len(weights) != len(raw):
+                    raise ValueError(f"{name} ids and weights must have equal length")
+                sample_weights.extend(float(value) for value in weights)
+        tensors: tuple[torch.Tensor, ...] = (
             torch.tensor(values, dtype=torch.long, device=device),
             torch.tensor(offsets, dtype=torch.long, device=device),
         )
+        if weighted:
+            tensors += (
+                torch.tensor(sample_weights, dtype=torch.float32, device=device),
+            )
+        packed[name] = tensors
     return packed

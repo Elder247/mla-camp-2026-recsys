@@ -41,6 +41,9 @@ class FieldAwareEncoder(nn.Module):
         if not cardinalities:
             raise ValueError("at least one field is required")
         self.field_names = tuple(cardinalities)
+        self.weighted_fields = frozenset(
+            name for name in self.field_names if name.endswith("_piecewise_ids")
+        )
         self.dimensions = {
             name: embedding_dimension(
                 int(cardinality),
@@ -56,7 +59,7 @@ class FieldAwareEncoder(nn.Module):
                 name: nn.EmbeddingBag(
                     int(cardinalities[name]),
                     self.dimensions[name],
-                    mode="mean",
+                    mode="sum" if name in self.weighted_fields else "mean",
                     include_last_offset=False,
                 )
                 for name in self.field_names
@@ -71,12 +74,22 @@ class FieldAwareEncoder(nn.Module):
 
     def forward(
         self,
-        bags: Mapping[str, tuple[torch.Tensor, torch.Tensor]],
+        bags: Mapping[str, tuple[torch.Tensor, ...]],
     ) -> torch.Tensor:
-        return torch.cat(
-            [self.embeddings[name](*bags[name]) for name in self.field_names],
-            dim=1,
-        )
+        outputs = []
+        for name in self.field_names:
+            packed = bags[name]
+            if name in self.weighted_fields:
+                outputs.append(
+                    self.embeddings[name](
+                        packed[0],
+                        packed[1],
+                        per_sample_weights=packed[2],
+                    )
+                )
+            else:
+                outputs.append(self.embeddings[name](packed[0], packed[1]))
+        return torch.cat(outputs, dim=1)
 
 
 class CrossLayer(nn.Module):
@@ -195,14 +208,14 @@ class TwoTowerV2(nn.Module):
 
     def encode_query(
         self,
-        bags: Mapping[str, tuple[torch.Tensor, torch.Tensor]],
+        bags: Mapping[str, tuple[torch.Tensor, ...]],
     ) -> torch.Tensor:
         selected = {name: bags[name] for name in self.query_fields.field_names}
         return self.query_tower(self.query_fields(selected))
 
     def encode_banner(
         self,
-        bags: Mapping[str, tuple[torch.Tensor, torch.Tensor]],
+        bags: Mapping[str, tuple[torch.Tensor, ...]],
     ) -> torch.Tensor:
         selected = {name: bags[name] for name in self.banner_fields.field_names}
         return self.banner_tower(self.banner_fields(selected))

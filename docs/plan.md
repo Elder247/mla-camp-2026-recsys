@@ -949,3 +949,28 @@ Fast logQ context screens and bounded ensemble (2026-08-09):
   its best early SC@50 rose to `0.686669`, but late fell to `0.657785`, below
   the matching control `0.658826`. No flat-fusion variant is promoted because
   the future private split is later in time.
+
+YT recovery, private scoring and next direct TwoTower gate (2026-08-09):
+
+- the expired `//tmp/astrofimuk_mla_two_stage/train_clicks_10m_metadata_v1`
+  table was reproduced from the exact historical YQL operation. The new
+  operation `6a78c8d21b228e0adac5a623` completed with `2,180,453` rows and the
+  expected 29-column contract;
+- no 100M YQL rebuild was launched: the three required temporary sources still
+  exist and contain `21,813,184` rows each (`train_clicks_100m_v1`,
+  `train_clicks_100m_metadata_v1`, and `train_clicks_100m_bpe_v2`). A 100M
+  training cycle remains gated by a successful 10M retrieval screen;
+- the robust and late-heavy BPE/context candidates scored private SC@50
+  `0.6515/0.6517` and were rejected. The previously failed bounded
+  banner/output blend was retried unchanged and became the new private best:
+  SC@50 `0.6548`, Recall@50 `0.5339`, Recall@10 `0.3787`;
+- combined v15 finished in `216.1s` at `10,091 rows/s`, but regressed versus
+  the half-logQ control: SC@50 `0.518338` vs `0.546591` and SC@500
+  `0.674005` vs `0.686787`. Its new-only SourceCost share at top 50 was only
+  `0.00631`, so no matching 100M fit is allowed;
+- v16 adds independent second hashes for query/title/text and differentiable
+  two-knot piecewise-linear embeddings for log1p SourceCost and ProductPrice.
+  The implementation remains checkpoint-compatible; targeted tests passed
+  `34/34` and the complete suite passed `186/186`. Its 10M fit and honest
+  candidate-only probe run sequentially as
+  `20260809_2155_i20_tt_multihash_piecewise_10m_probe`.
