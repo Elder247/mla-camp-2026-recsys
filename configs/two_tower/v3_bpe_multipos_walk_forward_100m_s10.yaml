@@ -5,10 +5,13 @@ experiment:
 
 paths:
   weekly_train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_100m_bpe_v2
-  week_stats_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10/week_stats.parquet
-  oof_requests_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10/oof_requests.parquet
-  history_events_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10/history_events.parquet
-  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10
+  # Week counts, deterministic OOF requests and past-only history are model
+  # architecture independent and are reused from the accepted 100M cycle.
+  week_stats_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_walk_forward_100m_s10/week_stats.parquet
+  oof_requests_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10_r1/oof_requests.parquet
+  history_events_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10_r1/history_events.parquet
+  dataset_artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10_r1
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_walk_forward_100m_s10_r1
   full_quality_artifact: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_chrono_100m_model
 
 tracking:

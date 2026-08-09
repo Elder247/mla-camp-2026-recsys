@@ -20,7 +20,7 @@ pipeline:
 
 paths:
   two_tower_v2_walk_forward_artifact: ${paths.immutable_artifacts}/two_tower_v2_walk_forward_100m_s10_chrono_final_v2
-  two_tower_v3_walk_forward_artifact: ${paths.immutable_artifacts}/two_tower_v3_bpe_multipos_walk_forward_100m_s10
+  two_tower_v3_walk_forward_artifact: ${paths.immutable_artifacts}/two_tower_v3_bpe_multipos_walk_forward_100m_s10_r1
   dual_tower_oof_requests: ${paths.two_tower_v2_walk_forward_artifact}/oof_requests.parquet
   dual_tower_history_events: ${paths.two_tower_v2_walk_forward_artifact}/history_events.parquet
 
