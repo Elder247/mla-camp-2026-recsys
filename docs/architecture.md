@@ -269,3 +269,37 @@ static/retrieval/text features remain. Counter lookup streams parquet and
 materializes only configured families. Merge uses compact Arrow dictionaries
 and partition workers; neither
 optimization introduces target-dependent candidate injection.
+
+## TwoTower v3: BPE, field interactions and false-negative-safe loss
+
+The v3 retriever preserves the immutable artifact and exact-search contracts of
+v2 but restores lexical information that word hashing alone discarded. Query,
+title and body text are encoded by mean-pooled embeddings from one shared
+16,384-token BPE vocabulary. The vocabulary is trained once on a versioned
+chronological corpus, copied into every model artifact and fingerprinted in the
+manifest. Existing hashed word fields remain separate signals rather than being
+replaced by BPE.
+
+The query tower concatenates query-word, query-BPE, region and derived
+query-region embeddings. The banner tower concatenates banner ID, ad group,
+title-word, title-BPE, text-word and text-BPE embeddings. Embedding dimensions
+remain config-derived with `ceil_to_8(6 * n ** 0.25)` and explicit caps. Mean
+pooling makes variable-length fields length-stable; LayerNorm is applied after
+the input projection, and the final 96-dimensional vectors are L2-normalized.
+
+Both towers use a 384-dimensional input projection followed by parallel four
+full-matrix DCNv2 cross layers and three residual Linear/LayerNorm/GELU layers.
+The two branches are concatenated and projected to the unit sphere. Retrieval
+is the exact dot product against all one million frozen banner vectors; no ANN
+approximation or train/inference feature mismatch is introduced.
+
+Training uses a symmetric query-to-banner and banner-to-query contrastive loss
+with temperature 0.05 and 1,024-example batches. Same-query-region examples and
+repeated banner IDs in a batch form a multi-positive mask instead of becoming
+false negatives. Targets exist only inside the loss; candidate generation still
+uses the identical natural pool at temporal validation and inference.
+
+An optional validation fine-tune is a distinct, config-scoped artifact. In
+temporal mode it trains only on the early validation fit window and evaluates
+the late holdout; in full mode it trains on all validation clicks only after
+the hypothesis is accepted. The base train artifact is never overwritten.

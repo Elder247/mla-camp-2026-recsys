@@ -636,3 +636,39 @@ Dataset-size gate for subsequent TwoTower hypotheses:
   only a clearly positive holdout result is retrained on 100M. When complete
   history coverage is needed cheaply, prefer deterministic 10% gradient
   sampling over truncating the history to its first 10M impressions.
+
+TwoTower v3 BPE/multi-positive gate and validation fit (2026-08-09):
+
+- v3 restores a shared 16,384-token BPE vocabulary for query/title/text, adds
+  a query-region interaction embedding, widens the towers to 384 hidden and 96
+  output dimensions, and uses four DCNv2 cross layers plus three residual MLP
+  layers. Batch size is 1,024, temperature is 0.05, and the symmetric
+  contrastive loss masks repeated query-region and banner IDs as positives;
+- the tokenizer was fitted on the existing chronological 10M corpus in
+  `126.1s` (2.56 GB peak RSS). The 10M v3 model trained on 2,180,453 clicked
+  pairs in `165.8s` and exported all one million banners in `61.6s`;
+- honest 10M retrieval improved over the matching chronological v2 control:
+  SC Recall@50 `0.466180` versus `0.455262`, and SC Recall@500 `0.675005`
+  versus `0.654963`. Mean top-50 Jaccard against the old full-data source is
+  `0.213`, so the source is complementary and passed the 100M promotion gate;
+- a strictly temporal low-LR fine-tune of the chronological 100M v2 model used
+  only the first 6,499 validation rows and evaluated on the untouched last
+  3,500. It took `1.8s` plus `42.1s` export and improved SC Recall@50 from
+  `0.538797` to `0.549648`, Recall@50 from `0.476150` to `0.483005`, and
+  SC Recall@500 from `0.697190` to `0.700997`;
+- SourceCost geometry selected exponent `0.3` inside the first 100 candidates,
+  raising honest direct-model SC Recall@50 to `0.575618`. The corresponding
+  all-validation full-fit direct submission passed the strict 10,000-by-50
+  contract but scored only `0.5525` private SC Recall@50 (Recall@50 `0.4482`,
+  Recall@10 `0.2805`). It is rejected as a standalone solution: validation fit
+  remains useful only as an additional complementary pool;
+- the 100M v3 YT table contains 21,813,184 chronological clicked pairs and was
+  prepared in `990.9s` with 548 MB peak RSS. Detached full-data v3 training is
+  active; promotion to CatBoost is conditional on honest retrieval and
+  complementarity, not validation accuracy.
+
+The cached SC-selected CatBoost variant was also checked privately. Despite
+honest temporal SC Recall@50 `0.655090`, its cross-pool submission scored
+`0.6257`, below the accepted `0.6262`; it is not retained. The current accepted
+private solution remains `chrono100m crosspool qrmse+yeti e02 n75` at SC
+Recall@50 `0.6262`.

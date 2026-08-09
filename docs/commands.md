@@ -297,3 +297,44 @@ python scripts/run_pipeline.py \
 
 The ensemble stage fails closed when ordered feature names differ and its
 submission manifest fingerprints both model artifacts.
+
+## TwoTower v3 BPE and validation-fit commands
+
+Prepare the immutable tokenizer and chronological training table, then train
+the promoted model. All paths and model parameters come from resolved config:
+
+```bash
+python scripts/train_two_tower_bpe.py \
+  --config configs/two_tower/v3_bpe_multipos_chrono_10m.yaml
+python scripts/prepare_two_tower_weekly_dataset.py \
+  --config configs/two_tower/v3_bpe_multipos_chrono_100m.yaml
+nohup env PYTHONUNBUFFERED=1 python scripts/train_two_tower_v2.py \
+  --config configs/two_tower/v3_bpe_multipos_chrono_100m.yaml \
+  > /tmp/two_tower_v3_bpe_100m_train.terminal.log 2>&1 < /dev/null &
+```
+
+Run the leakage-safe temporal validation fit before the accepted full fit:
+
+```bash
+python scripts/finetune_two_tower_validation.py \
+  --config configs/two_tower/v2_chrono100m_valfit_temporal.yaml
+python scripts/finetune_two_tower_validation.py \
+  --config configs/two_tower/v2_chrono100m_valfit_full.yaml
+```
+
+Tune direct SourceCost geometry only on the untouched temporal holdout and
+materialize exactly that choice for test:
+
+```bash
+python scripts/tune_two_tower_geometry.py \
+  --run /home/astrofimuk/workspace/mla_two_stage/runs/<temporal-probe> \
+  --artifact /home/astrofimuk/workspace/mla_two_stage/artifacts/<temporal-model> \
+  --exponents 0,0.05,0.1,0.15,0.2,0.3,0.4 \
+  --rerank-top-n 50,75,100,150,250 \
+  --output /home/astrofimuk/workspace/mla_two_stage/runs/<temporal-probe>/metrics/two_tower_geometry.json
+python scripts/make_two_tower_submission.py \
+  --run /home/astrofimuk/workspace/mla_two_stage/runs/<full-run> \
+  --artifact /home/astrofimuk/workspace/mla_two_stage/artifacts/<full-model> \
+  --source two_tower_v2 --exponent 0.3 --rerank-top-n 100 \
+  --output /home/astrofimuk/workspace/mla_two_stage/runs/<full-run>/predictions/test_top50_tt_fullfit.parquet
+```
