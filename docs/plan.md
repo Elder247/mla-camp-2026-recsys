@@ -793,3 +793,32 @@ LogQ TwoTower gate (2026-08-09):
   100M logQ fit is queued after the active full-run GPU CatBoost stage; its
   honest retrieval probe and cached ensemble grid are already chained as
   detached processes, without overlapping two GPU jobs.
+
+LogQ 100M and accepted private result (2026-08-09):
+
+- v8 processed all `21,813,184` chronological examples in `2402.2s` at
+  `9.08k rows/s`; the one-million-banner 96D export took `87.4s`. Final
+  validation loss/accuracy were `0.5906/0.8085`, with `2.27 GB` peak GPU
+  allocation and `2.57 GB` peak RSS;
+- the first probe invocation stopped before computation because its dedicated
+  experiment YAML was missing. The failed log is retained; commit `02fcf34`
+  adds the candidate-only config, `14/14` targeted tests passed, and the same
+  run resumed without retraining. Prepare/generate/evaluate then took
+  `2.18/76.26/9.40s` and produced 3.5M candidate rows in 32 partitions;
+- honest v8 SC Recall@50 improved from v7 `0.627165` to `0.634545`, and
+  Recall@50 from `0.533847` to `0.548129`. SC Recall@500 decreased slightly
+  from `0.729225` to `0.724169`; mean top-50 Jaccard is `0.448`, so v8 is used
+  as a small complementary source rather than as a replacement;
+- a two-half temporal gate selected 90% of the accepted private-best proxy and
+  10% v8, RRF constant `0`, SourceCost exponent `0.15` inside top `100`.
+  SC Recall@50 gains over the control were `+0.006125/+0.003784/+0.005049`
+  on early/late/full holdout respectively;
+- the bounded validation full-fit and test-only inference took `93.84s` and
+  `32.09s`; final materialization took `4.41s`. Strict validation passed
+  10,000 unique HitLogIDs with exactly 50 unique indexed banners per row. The
+  full parquet SHA-256 is
+  `d21795410bd15523304fbf77f181eb70d8ede72df9adb220a08a722292b59ae4`;
+- leaderboard entry `18a772a74dee` (`best90 logq10 rrf0 e015 n100`) scored
+  private SC Recall@50 `0.6545213914`, Recall@50 `0.5348` and Recall@10
+  `0.3750`. This is the new accepted personal best, `+0.004458` absolute SC
+  Recall@50 over the previous `0.6500635747` result.
