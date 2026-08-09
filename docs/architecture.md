@@ -255,6 +255,12 @@ Full ranker data is `weekly OOF + all 9,999 validation requests`. Each scope
 fits CatBoost exactly once from its natural 500-candidate pools. Full remains a
 distinct post-selection fit, not a second fit inside temporal validation.
 
+The configurable ranker target may be binary click, log-SourceCost or scaled
+raw SourceCost. All three targets are attached only after the identical natural
+candidate pool has been frozen; `ranker_binary` therefore supports cheap
+click-probability/value-model complementarity tests without reintroducing
+positive injection.
+
 The 10M config retains TF-IDF, weekly TwoTower, past-only query/query-region,
 user and global generators. Optional query/query-region recency variants are
 the current fast candidate-development gate. Existing honest feature

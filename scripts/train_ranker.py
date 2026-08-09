@@ -109,6 +109,8 @@ def group_weight_array(
 
 def label_spec(cfg: object) -> tuple[str, float]:
     kind = str(cfg.ranker.kind)
+    if kind == "ranker_binary":
+        return "label_binary", 1.0
     if kind == "ranker_logsc":
         return "label_logsc", 1.0
     if kind == "ranker_raw_sc_label":

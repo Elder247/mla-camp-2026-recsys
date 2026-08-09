@@ -19,6 +19,12 @@ def test_raw_sourcecost_label_is_not_log_surrogate() -> None:
     assert label_spec(log) == ("label_logsc", 1.0)
 
 
+def test_binary_ranker_uses_natural_pool_click_label() -> None:
+    binary = OmegaConf.create({"ranker": {"kind": "ranker_binary"}})
+
+    assert label_spec(binary) == ("label_binary", 1.0)
+
+
 def test_source_cost_group_weights_are_clipped_normalized_and_expanded() -> None:
     table = pa.table(
         {
