@@ -71,6 +71,15 @@ def main() -> int:
         },
     }
     atomic_json(target, config)
+    root_manifest_path = args.artifact_dir / "manifest.json"
+    if root_manifest_path.is_file():
+        root_manifest = json.loads(root_manifest_path.read_text(encoding="utf-8"))
+        root_manifest["inference"] = config
+        root_manifest.setdefault("files", {})[target.name] = {
+            "bytes": target.stat().st_size,
+            "sha256": file_sha256(target),
+        }
+        atomic_json(root_manifest_path, root_manifest)
     print(json.dumps(config, indent=2))
     return 0
 
