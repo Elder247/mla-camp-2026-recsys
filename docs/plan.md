@@ -581,3 +581,27 @@ Chronological walk-forward promotion:
   only bounded QueryRMSE geometry and QueryRMSE/YetiRank rank ensembles, then
   launch `20260809_0720_i2_chrono_full` only if honest SC Recall@50 exceeds
   `0.650073` and merged candidate SC Recall@500 remains at least `0.700`.
+
+Chronological temporal and cross-pool decision:
+
+- `20260809_0705_i2_chrono_temporal` completed in `23m28s`; parity passed
+  `40/40` with zero mismatches. Merge took `116/33s`, features `533/323s`, the
+  181-tree QueryRMSE fit `42s`, and evaluation `25s`;
+- chronological-only merged SC Recall@500 improved from `0.710200` to
+  `0.712886`, but its best QueryRMSE/YetiRank geometry reached only `0.647209`,
+  below the accepted `0.650073`. The single-pool supervisor therefore rejected
+  full as intended;
+- the old and chronological ranked pools were then fused without rebuilding
+  candidates, features or models. A bounded temporal grid selected old/new
+  weights `0.6/0.4`, RRF constant `10`, and SourceCost exponent `0.2` inside
+  top `75`. Honest SC Recall@50/500 is `0.653148/0.719973`, with Recall@50
+  `0.549272`; this is `+0.31 pp` over the accepted temporal best and passes the
+  cross-pool promotion gate;
+- the initial reusable tuner kept every full ordering and took `880s` with
+  `20.7 GB` peak RSS. This is safe on the 2 TB VM but is retained only as the
+  auditable selection run; production materialization evaluates exactly the
+  selected configuration once;
+- `20260809_0720_i2_chrono_full` is now running detached. A second detached
+  watcher will combine its test ranking with completed old full
+  `20260809_0601_i2_ensemble_full`, emit a separate parquet/manifest, and run
+  the strict 10,000-request, 50-unique-indexed-banner validation before upload.
