@@ -974,3 +974,19 @@ YT recovery, private scoring and next direct TwoTower gate (2026-08-09):
   `34/34` and the complete suite passed `186/186`. Its 10M fit and honest
   candidate-only probe run sequentially as
   `20260809_2155_i20_tt_multihash_piecewise_10m_probe`.
+- v16 completed the 10M gate in `293.2s` at `7,438 rows/s`. Versus the
+  half-logQ control it improved Recall/SC@50 by `+0.003142/+0.004457` and
+  Recall/SC@500 by `+0.005141/+0.008050`. Mean top-50 Jaccard is `0.268`;
+  v16-only top-50 hits contribute `1.046%` of total SourceCost versus
+  `0.373%` in the other direction. It is the only promoted 100M model;
+- a bounded cached fusion of the new private-best proxy with causal
+  exact-query and query-region history was also evaluated. It improved early
+  SC@50 by `+0.000533` but reduced late SC@50 by `-0.000109`, so history is
+  not added to this direct submission;
+- commit `b2a8cfc` contains v16 and its tests. A follow-up supervisor adds a
+  two-half bounded direct gate, validation full-fit, test-only inference and
+  strict materialization; the full suite passes `188/188` after this change;
+- the sole promoted 100M fit runs as
+  `20260809_2205_i21_tt_multihash_piecewise_100m_probe`. Detached supervisor
+  `20260809_2255_i21_tt_multihash_piecewise_direct_full` will proceed only if
+  the 100M candidate improves both temporal halves by at least `0.0001`.
