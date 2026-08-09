@@ -876,3 +876,35 @@ Next fast TwoTower screens (2026-08-09):
 - the six trials run sequentially and detached. Only an honest SC/Recall and
   complementarity winner can enter one combined 10M check and at most one
   subsequent 100M fit.
+
+Fast logQ context screens and bounded ensemble (2026-08-09):
+
+- order-preserving two-batch prefetch reduced YT wait from `31.2%` to roughly
+  `3-5%`. The independent 10M fits took `194-212s`, plus `81-85s` for the
+  one-million-banner export; no GPU trials overlapped;
+- batch size `8192` and SourceCost loss power `0.75` were rejected. Their
+  honest SC Recall@50 was `0.540002/0.529640`, below the matching half-logQ
+  control `0.546591`;
+- the wider second BannerID hash reached SC Recall@50/500
+  `0.544139/0.692271`. Its low top-50 Jaccard `0.263` made it a useful
+  complementary source despite a small standalone SC@50 decrease;
+- the `hidden_dim=512`, `output_dim=128` tower was the strongest standalone
+  screen at SC Recall@50 `0.552389`, with oracle-union SC@50 `0.605100` and
+  top-50 Jaccard `0.272` against the control;
+- two hashed CryptaID embeddings reached standalone SC Recall@50 `0.544445`.
+  They were complementary to the weak 10M control but added no stable top-50
+  gain over the already accepted private-best proxy. The Income training table
+  was built and schema-checked, but its screen and the first combined retry
+  stopped on an external YT proxy outage before producing a model manifest;
+- exhaustive four-source tuning was replaced by a bounded simplex retaining
+  at least `80%` of the accepted control. Commit `ddb4f83` adds this configurable
+  restriction and its unit tests. The selected cached three-pool blend uses
+  accepted/banner-hash/output128 weights `0.80/0.10/0.10`, RRF constant `10`,
+  SourceCost exponent `0.05`, and rerank top `75`. Versus the matching control,
+  early/late/full temporal SC Recall@50 improved by
+  `+0.001232/+0.003292/+0.002178`;
+- all three 10M test candidate pools completed with 32 partitions. The selected
+  output passed the strict 10,000-by-50 contract, has full SHA-256
+  `1de5650002168cd35022288e5bdfb8b94e5cd47010c7017b6342925e55f7220b`,
+  and was uploaded as leaderboard entry `bc5cc60153a0`; private evaluation is
+  still running at the time of this record.
