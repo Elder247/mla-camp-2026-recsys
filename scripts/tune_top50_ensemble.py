@@ -38,7 +38,12 @@ def int_grid(raw: str) -> list[int]:
     return sorted({int(value) for value in raw.split(",") if value})
 
 
-def simplex_weights(count: int, step: float) -> list[tuple[float, ...]]:
+def simplex_weights(
+    count: int,
+    step: float,
+    *,
+    minimum_first_weight: float = 0.0,
+) -> list[tuple[float, ...]]:
     if count <= 0:
         raise ValueError("At least one ranking input is required")
     denominator = round(1.0 / step)
@@ -54,10 +59,18 @@ def simplex_weights(count: int, step: float) -> list[tuple[float, ...]]:
             for tail in compositions(total - head, width - 1)
         ]
 
+    if not 0.0 <= minimum_first_weight <= 1.0:
+        raise ValueError("minimum-first-weight must be in [0, 1]")
     return [
         tuple(value / denominator for value in row)
         for row in compositions(denominator, count)
+        if value_at_least(row[0] / denominator, minimum_first_weight)
     ]
+
+
+def value_at_least(value: float, threshold: float) -> bool:
+    """Compare grid weights without dropping a boundary to float noise."""
+    return value + 1.0e-12 >= threshold
 
 
 def read_ranking(path: Path, *, candidate_top_k: int = 0) -> Rankings:
@@ -174,6 +187,12 @@ def main() -> int:
     parser.add_argument("--requests", type=Path, required=True)
     parser.add_argument("--banner-index", type=Path, required=True)
     parser.add_argument("--weight-step", type=float, default=0.25)
+    parser.add_argument(
+        "--minimum-first-weight",
+        type=float,
+        default=0.0,
+        help="Restrict the simplex to mixtures retaining this much of input 1",
+    )
     parser.add_argument("--rrf-constants", default="0,10,40")
     parser.add_argument("--geometry-exponents", default="0,0.1,0.2")
     parser.add_argument("--geometry-top-n", default="50,75,100")
@@ -217,7 +236,11 @@ def main() -> int:
     }
 
     base_results = []
-    for weights in simplex_weights(len(sources), args.weight_step):
+    for weights in simplex_weights(
+        len(sources),
+        args.weight_step,
+        minimum_first_weight=args.minimum_first_weight,
+    ):
         for constant in float_grid(args.rrf_constants):
             orders = {
                 hit_log_id: fuse_rankings(
@@ -292,6 +315,7 @@ def main() -> int:
         "inputs": [fingerprint_file(path) for path in args.input if path.is_file()],
         "input_paths": [str(path) for path in args.input],
         "candidate_top_k": args.candidate_top_k,
+        "minimum_first_weight": args.minimum_first_weight,
         "requests": len(requests),
         "tune_requests": len(tune_ids),
         "validation_requests": len(validation_ids),

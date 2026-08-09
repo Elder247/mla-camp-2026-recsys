@@ -13,6 +13,14 @@ def test_simplex_weights_cover_the_unit_simplex() -> None:
     assert (0.0, 0.5, 0.5) in values
 
 
+def test_simplex_weights_can_preserve_a_strong_control_source() -> None:
+    values = simplex_weights(3, 0.05, minimum_first_weight=0.8)
+    assert len(values) == 15
+    assert all(row[0] >= 0.8 for row in values)
+    assert (0.8, 0.1, 0.1) in values
+    assert (1.0, 0.0, 0.0) in values
+
+
 def test_fuse_rankings_rewards_shared_candidates() -> None:
     fused = fuse_rankings(
         [[1, 2, 3], [3, 4, 5]],
