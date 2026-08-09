@@ -748,3 +748,25 @@ Selected-tower CatBoost temporal and cached ensemble gate (2026-08-09):
   `20260809_1610_i4_feature_full`, launched detached with the temporal-selected
   `366` CatBoost iterations. The full output will be accepted only after the
   strict 10,000-request submission contract and an autonomous private check.
+
+LogQ TwoTower gate (2026-08-09):
+
+- v8 keeps the accepted v7 architecture and adds configurable sampled-softmax
+  correction. Query-to-banner logits subtract the batch-frequency
+  `log Q(banner)` term; the symmetric banner-to-query direction subtracts
+  `log Q(query)`. Positive identity uses the raw BannerID where available, so
+  hash collisions cannot create false positives. `logq_power` and the
+  correction mode live in YAML rather than code;
+- the implementation is shared by ordinary, validation-fine-tune and weekly
+  walk-forward training. The complete unit suite passed `164/164`;
+- the 10M screen trained on `2,180,453` examples in `277.2s` at `7.87k rows/s`
+  and exported one million 96D banner embeddings in `89.5s`. Its standalone
+  SC Recall@50 decreased from v7 `0.546966` to `0.540453`, while Recall@50
+  improved from `0.443588` to `0.449586` and SC Recall@500 improved from
+  `0.670947` to `0.690273`;
+- complementarity passed the bounded promotion gate: a cached v7/v8 ensemble
+  improved honest full-holdout SC Recall@50 by about `1.1 pp` over the matching
+  v7-only geometry control, with mean top-50 Jaccard only `0.323`. Exactly one
+  100M logQ fit is queued after the active full-run GPU CatBoost stage; its
+  honest retrieval probe and cached ensemble grid are already chained as
+  detached processes, without overlapping two GPU jobs.
