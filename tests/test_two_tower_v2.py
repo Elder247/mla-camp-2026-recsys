@@ -10,7 +10,7 @@ torch = pytest.importorskip("torch")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from two_tower_v2.data import pack_bags  # noqa: E402
+from two_tower_v2.data import pack_bags, yt_read_options  # noqa: E402
 from two_tower_v2.model import TwoTowerV2, embedding_dimension  # noqa: E402
 from scripts.train_two_tower_v2 import load_config  # noqa: E402
 
@@ -84,3 +84,21 @@ def test_full_training_config_keeps_all_rows_and_requested_architecture() -> Non
     assert cfg.model.embedding_policy.multiplier == 6.0
     assert cfg.model.embedding_policy.max_dim == 96
     assert cfg.export.max_index_rows == 0
+    assert not cfg.training.strict_chronological
+
+
+def test_chronological_config_preserves_sorted_yt_stream() -> None:
+    cfg = load_config(
+        ROOT / "configs" / "two_tower" / "v2_dcn4_mlp3_chrono_10m.yaml"
+    )
+    assert cfg.training.strict_chronological
+    assert cfg.training.shuffle_buffer == 1
+    assert cfg.paths.train_table.endswith("train_clicks_10m_v1")
+    assert yt_read_options(ordered=True) == {
+        "unordered": False,
+        "enable_read_parallel": False,
+    }
+    assert yt_read_options(ordered=False) == {
+        "unordered": True,
+        "enable_read_parallel": True,
+    }

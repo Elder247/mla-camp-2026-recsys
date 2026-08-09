@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 
 
 def load_config(path: Path):
@@ -41,6 +42,7 @@ def main() -> int:
         resolve_device,
         train_model,
     )
+    from mla_recsys.tracking import UnderdeepTracker, numeric_metrics
 
     artifact_dir = Path(str(cfg.paths.artifact_dir))
     if artifact_dir.exists() and any(artifact_dir.iterdir()):
@@ -56,40 +58,72 @@ def main() -> int:
     )
     resolved = OmegaConf.to_yaml(cfg, resolve=True)
     (artifact_dir / "config.resolved.yaml").write_text(resolved, encoding="utf-8")
-    source = YtTableSource(str(cfg.paths.train_table), str(cfg.paths.proxy))
+    strict_chronological = bool(cfg.training.get("strict_chronological", False))
+    source = YtTableSource(
+        str(cfg.paths.train_table),
+        str(cfg.paths.proxy),
+        ordered=strict_chronological,
+    )
     validation = YtTableSource(str(cfg.paths.validation_table), str(cfg.paths.proxy))
     device = resolve_device(str(cfg.runtime.device))
-    model, training = train_model(
-        cfg=cfg,
-        source=source,
-        validation=validation,
+    tracking_cfg = cfg.get("tracking", {}).get("underdeep", {})
+    tracker = UnderdeepTracker(
         artifact_dir=artifact_dir,
-        device=device,
-    )
-    candidates = export_candidates(
-        cfg=cfg,
-        model=model,
-        artifact_dir=artifact_dir,
-        device=device,
-    )
-    config_sha = hashlib.sha256(resolved.encode("utf-8")).hexdigest()
-    manifest = {
-        "version": 1,
-        "solution": str(cfg.experiment.name),
-        "config_sha256": config_sha,
-        "git_sha": git_sha(ROOT),
-        "training": training,
-        "candidates": candidates,
-        "files": {
-            name: {
-                "bytes": (artifact_dir / name).stat().st_size,
-            }
-            for name in ("model.pt", "candidate_embeddings.npy", "candidate_metadata.parquet")
+        tracking_cfg=tracking_cfg,
+        run_name=str(
+            tracking_cfg.get("run_name", f"two-tower-v2-{cfg.experiment.name}")
+        ),
+        description="Field-aware TwoTower v2 training and candidate export",
+        parameters={
+            "experiment": str(cfg.experiment.name),
+            "strict_chronological": strict_chronological,
+            "train_table": str(cfg.paths.train_table),
         },
-    }
-    atomic_json(artifact_dir / "metrics.json", {"training": training, "candidates": candidates})
-    atomic_json(artifact_dir / "manifest.json", manifest)
-    logging.info("TwoTower v2 artifact completed: %s", artifact_dir)
+        tags=["mla-camp", "two-tower-v2", str(cfg.experiment.name)],
+    )
+    try:
+        model, training = train_model(
+            cfg=cfg,
+            source=source,
+            validation=validation,
+            artifact_dir=artifact_dir,
+            device=device,
+            tracker=tracker,
+        )
+        candidates = export_candidates(
+            cfg=cfg,
+            model=model,
+            artifact_dir=artifact_dir,
+            device=device,
+        )
+        config_sha = hashlib.sha256(resolved.encode("utf-8")).hexdigest()
+        manifest = {
+            "version": 1,
+            "solution": str(cfg.experiment.name),
+            "config_sha256": config_sha,
+            "git_sha": git_sha(ROOT),
+            "training": training,
+            "candidates": candidates,
+            "files": {
+                name: {
+                    "bytes": (artifact_dir / name).stat().st_size,
+                }
+                for name in (
+                    "model.pt",
+                    "candidate_embeddings.npy",
+                    "candidate_metadata.parquet",
+                )
+            },
+        }
+        metrics = {"training": training, "candidates": candidates}
+        atomic_json(artifact_dir / "metrics.json", metrics)
+        atomic_json(artifact_dir / "manifest.json", manifest)
+        tracker.log_summary(numeric_metrics(metrics, prefix="two_tower"))
+        tracker.close()
+        logging.info("TwoTower v2 artifact completed: %s", artifact_dir)
+    except Exception as error:
+        tracker.close(error=type(error).__name__)
+        raise
     return 0
 
 

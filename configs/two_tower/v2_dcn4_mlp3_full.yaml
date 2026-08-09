@@ -12,6 +12,14 @@ paths:
 runtime:
   device: cuda
 
+tracking:
+  underdeep:
+    enabled: true
+    project: camp-2026
+    experiment: modern-plumber
+    run_name: two-tower-v2-dcn4-mlp3-full
+    finish_timeout_seconds: 30
+
 model:
   query_cardinalities:
     query_word_ids: 65536
@@ -33,6 +41,7 @@ model:
   dropout: 0.05
 
 training:
+  strict_chronological: false
   temperature: 0.07
   batch_size: 512
   epochs: 1

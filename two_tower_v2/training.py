@@ -118,6 +118,7 @@ def train_model(
     validation: YtTableSource,
     artifact_dir: Path,
     device: torch.device,
+    tracker: Any | None = None,
 ) -> tuple[TwoTowerV2, dict[str, Any]]:
     seed = int(cfg.training.seed)
     random.seed(seed)
@@ -210,6 +211,16 @@ def train_model(
                     next_validation += int(cfg.training.validate_every_rows)
             if step % int(cfg.training.log_every) == 0:
                 elapsed = time.perf_counter() - started
+                live = {
+                    "train/loss": last_loss,
+                    "train/in_batch_accuracy": last_accuracy,
+                    "train/examples_seen": float(examples_seen),
+                    "train/rows_per_second": examples_seen / max(elapsed, 1e-9),
+                    "train/data_wait_fraction": data_wait_seconds
+                    / max(elapsed, 1e-9),
+                }
+                for name, value in last_validation.items():
+                    live[f"validation/{name}"] = float(value)
                 LOGGER.info(
                     "step=%s rows=%s loss=%.4f acc=%.4f grad=%.3f rows/s=%.0f wait=%.1f%%",
                     step,
@@ -220,6 +231,8 @@ def train_model(
                     examples_seen / max(elapsed, 1e-9),
                     100 * data_wait_seconds / max(elapsed, 1e-9),
                 )
+                if tracker is not None:
+                    tracker.log(step, live)
             if (max_steps > 0 and step >= max_steps) or (
                 max_examples > 0 and examples_seen >= max_examples
             ):

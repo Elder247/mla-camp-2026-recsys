@@ -41,12 +41,22 @@ def deterministic_sample(value: object, *, fraction: float, seed: int) -> bool:
     return value_hash < int(float(fraction) * (1 << 64))
 
 
+def yt_read_options(*, ordered: bool) -> dict[str, bool]:
+    """Return the YT reader contract for reproducible chronological streams."""
+
+    return {
+        "unordered": not ordered,
+        "enable_read_parallel": not ordered,
+    }
+
+
 class YtTableSource:
-    def __init__(self, table: str, proxy: str) -> None:
+    def __init__(self, table: str, proxy: str, *, ordered: bool = False) -> None:
         from common.yt_data import make_client
 
         self.table = table
         self.proxy = proxy
+        self.ordered = bool(ordered)
         self.client = make_client()
         if not self.client.exists(table):
             raise FileNotFoundError(f"YT table does not exist: {table}")
@@ -57,7 +67,8 @@ class YtTableSource:
         missing = set(ALL_FIELDS) - columns
         if missing:
             raise ValueError(f"YT table {table} misses fields: {sorted(missing)}")
-        self.description = f"YT {proxy}:{table}"
+        order = "chronological" if self.ordered else "parallel"
+        self.description = f"YT {proxy}:{table} ({order})"
 
     def rows(self) -> Iterator[dict[str, list[int]]]:
         import yt.wrapper as yt
@@ -65,8 +76,7 @@ class YtTableSource:
         path = yt.TablePath(self.table, columns=list(ALL_FIELDS))
         for raw in self.client.read_table(
             path,
-            unordered=True,
-            enable_read_parallel=True,
+            **yt_read_options(ordered=self.ordered),
         ):
             yield {
                 name: [int(value) for value in raw.get(name) or ()]
