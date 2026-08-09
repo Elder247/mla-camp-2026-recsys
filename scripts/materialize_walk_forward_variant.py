@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +22,28 @@ FINAL_FILES = (
     "candidate_metadata.parquet",
     "manifest.json",
 )
+REQUIRED_SHARED_FILES = ("oof_requests.parquet", "history_events.parquet")
+OPTIONAL_SHARED_FILES = ("week_stats.parquet", "schedule.json", "oof_requests.json")
+
+
+def materialize_file(source: Path, target: Path) -> None:
+    if target.exists():
+        if not target.is_file() or not os.path.samefile(source, target):
+            raise FileExistsError(f"Variant file differs from its source: {target}")
+        return
+    fd, temporary_raw = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    os.close(fd)
+    temporary = Path(temporary_raw)
+    temporary.unlink()
+    try:
+        try:
+            os.link(source, temporary)
+        except OSError:
+            shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def materialize_variant(
@@ -38,6 +63,15 @@ def materialize_variant(
         raise RuntimeError("Source walk-forward artifact is not completed")
     if not source_manifest.get("snapshots"):
         raise RuntimeError("Source walk-forward artifact has no OOF snapshots")
+    shared_files = [source_artifact / name for name in REQUIRED_SHARED_FILES]
+    missing_shared = [str(path) for path in shared_files if not path.is_file()]
+    if missing_shared:
+        raise FileNotFoundError(f"Walk-forward shared files are missing: {missing_shared}")
+    shared_files.extend(
+        path
+        for name in OPTIONAL_SHARED_FILES
+        if (path := source_artifact / name).is_file()
+    )
 
     final_files = [final_artifact / name for name in FINAL_FILES]
     missing = [str(path) for path in final_files if not path.is_file()]
@@ -61,6 +95,7 @@ def materialize_variant(
             "original_final_artifact": str(source_manifest.get("final_artifact") or ""),
             "selected_final_artifact": str(final_artifact),
             "selected_final_inputs": [fingerprint_file(path) for path in final_files],
+            "shared_inputs": [fingerprint_file(path) for path in shared_files],
         },
     )
 
@@ -75,6 +110,8 @@ def materialize_variant(
             or existing_variant.get("selected_final_artifact") != str(final_artifact)
         ):
             raise FileExistsError(f"Target belongs to another variant: {target_artifact}")
+        for source in shared_files:
+            materialize_file(source, target_artifact / source.name)
         return {
             "status": "reused",
             "target_artifact": str(target_artifact),
@@ -82,6 +119,8 @@ def materialize_variant(
         }
 
     target_artifact.mkdir(parents=True)
+    for source in shared_files:
+        materialize_file(source, target_artifact / source.name)
     atomic_write_json(target_manifest, manifest)
     atomic_write_json(target_artifact / "metrics.json", manifest)
     report = {

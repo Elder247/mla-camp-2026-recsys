@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from scripts.materialize_walk_forward_variant import FINAL_FILES, materialize_variant
+from scripts.materialize_walk_forward_variant import (
+    FINAL_FILES,
+    REQUIRED_SHARED_FILES,
+    materialize_variant,
+)
 
 
 def complete_final(path: Path) -> None:
@@ -21,6 +25,8 @@ def test_variant_preserves_source_and_is_idempotent(tmp_path: Path) -> None:
     selected = tmp_path / "chrono_final"
     complete_final(original)
     complete_final(selected)
+    for name in REQUIRED_SHARED_FILES:
+        (source / name).write_bytes(name.encode())
     source_manifest = {
         "status": "completed",
         "snapshots": {"123": {"path": "/snapshot/123"}},
@@ -50,6 +56,9 @@ def test_variant_preserves_source_and_is_idempotent(tmp_path: Path) -> None:
     assert variant["variant"]["original_final_artifact"] == str(original)
     assert (target / "metrics.json").is_file()
     assert (target / "variant.json").is_file()
+    for name in REQUIRED_SHARED_FILES:
+        assert (target / name).is_file()
+        assert (target / name).samefile(source / name)
 
 
 def test_variant_rejects_overwrite_and_incomplete_final(tmp_path: Path) -> None:
@@ -59,6 +68,8 @@ def test_variant_rejects_overwrite_and_incomplete_final(tmp_path: Path) -> None:
         json.dumps({"status": "completed", "snapshots": {"1": {}}}),
         encoding="utf-8",
     )
+    for name in REQUIRED_SHARED_FILES:
+        (source / name).write_bytes(name.encode())
     with pytest.raises(ValueError):
         materialize_variant(
             source_artifact=source,
