@@ -318,3 +318,20 @@ Current fast 100M walk-forward decision:
 - the result is rejected. It confirms that the temporal/full history mismatch
   is material and that promotion must include a non-empty frozen-history test
   contract check, not only temporal gates.
+
+SourceCost group-weight decision (`20260809_0345_i2_scgw_temporal`):
+
+- the cached temporal run retained the exact natural candidate ceiling at
+  SC Recall@500 `0.710200`; train/holdout features contain
+  `9,374,250/2,625,000` rows;
+- p99-clipped, mean-normalized request SourceCost weights reduced standalone
+  CatBoost SC Recall@50 from `0.636936` to `0.632985`;
+- a complete cached rank-linear blend grid took 18 seconds and peaked at
+  `0.643123` for alpha `0.6`, below the unweighted `0.643664`; the weighting
+  hypothesis is rejected and is not promoted to full;
+- feature construction took `539/334s` and CatBoost only `135s`. New ideas use
+  a progressive `1M smoke -> 10M temporal gate -> 100M confirmation` policy,
+  while final quality runs keep the full chronological history;
+- UnderDeep is active at `camp-2026/modern-plumber`: candidate/ranker metrics,
+  primary SC, timings, peak memory, submission checks and native CatBoost
+  importance are backed up locally and sent fail-open without reading tokens.

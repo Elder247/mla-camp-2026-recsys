@@ -49,6 +49,8 @@ candidates:
       quota: 1000
       top_k: 1000
       weight: 0.25
+      request_workers: 8
+      parallel_batch_size: 8
     two_tower_v2_walk_forward:
       enabled: true
       resource: gpu
@@ -121,3 +123,4 @@ ranker:
 evaluation:
   complementarity_baseline_sources: [tfidf_v1]
   high_value_quantile: 0.9
+  parity_temporal_workers: 3

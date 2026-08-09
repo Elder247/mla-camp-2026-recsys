@@ -140,6 +140,65 @@ def _try_reuse_feature_partition(
     return _table_stats(table)
 
 
+def _preinitialize_feature_reuse(
+    *,
+    cfg: object,
+    run_path: Path,
+    split: str,
+    request_path: Path,
+    banner_index_path: Path,
+    partitions: int,
+    config_sha: str,
+    force: bool,
+) -> list[tuple[int, dict[str, int]]] | None:
+    """Reuse every feature part before loading multi-gigabyte lookup state."""
+    if force or not cfg.features.get("reuse_run"):
+        return None
+    counter_inputs: list[dict] = []
+    if str(cfg.features.version) != "feature_v1":
+        counter_dir = run_path / "counters" / str(cfg.runtime.scope)
+        counter_path = counter_dir / "click_events.parquet"
+        scope_path = counter_dir / "scope.json"
+        scope_manifest = json.loads(scope_path.read_text(encoding="utf-8"))
+        validate_scope(str(cfg.runtime.scope), str(scope_manifest["scope"]))
+        counter_inputs = [fingerprint_file(counter_path), fingerprint_file(scope_path)]
+    _FEATURE_STATE.clear()
+    _FEATURE_STATE.update(
+        cfg=cfg,
+        run_path=run_path,
+        split=split,
+        request_path=request_path,
+        banner_index_path=banner_index_path,
+        counter_inputs=counter_inputs,
+    )
+    reused_results: list[tuple[int, dict[str, int]]] = []
+    for partition in range(partitions):
+        merged_path = (
+            run_path
+            / "candidates"
+            / split
+            / "merged"
+            / f"part-{partition:05d}.parquet"
+        )
+        output = run_path / "features" / split / f"part-{partition:05d}.parquet"
+        inputs = [
+            fingerprint_file(request_path),
+            fingerprint_file(merged_path),
+            fingerprint_file(banner_index_path),
+            *counter_inputs,
+        ]
+        reused = _try_reuse_feature_partition(
+            partition=partition,
+            output=output,
+            inputs=inputs,
+            config_sha=config_sha,
+        )
+        if reused is None:
+            return None
+        reused_results.append((partition, {**reused, "reused": 1}))
+    return reused_results
+
+
 def _initialize_feature_worker(
     cfg_dict: dict,
     run_path_raw: str,
@@ -275,6 +334,16 @@ def main() -> int:
     }
     cfg_dict = to_plain_dict(cfg)
     workers = max(1, int(cfg.pipeline.get("feature_partition_workers", 1)))
+    results = _preinitialize_feature_reuse(
+        cfg=cfg,
+        run_path=context.store.path,
+        split=split,
+        request_path=request_path,
+        banner_index_path=banner_index_path,
+        partitions=partitions,
+        config_sha=config_sha,
+        force=force,
+    )
     initargs = (
         cfg_dict,
         str(context.store.path),
@@ -282,7 +351,9 @@ def main() -> int:
         str(request_path),
         str(banner_index_path),
     )
-    if workers == 1:
+    if results is not None:
+        pass
+    elif workers == 1:
         _initialize_feature_worker(*initargs)
         results = [
             _build_one_feature_partition(partition, config_sha, force)

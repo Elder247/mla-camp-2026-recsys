@@ -89,6 +89,7 @@ evaluation:
   cutoffs: [1, 5, 10, 20, 50, 100, 500, 1000]
   primary_metric: sourcecost_recall@50
   submission_top_k: 50
+  parity_temporal_workers: 1
   high_value_quantile: 0.9
   complementarity_baseline_sources: []
 

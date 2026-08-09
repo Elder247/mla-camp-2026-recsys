@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import pyarrow.parquet as pq
+from omegaconf import OmegaConf
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -13,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from mla_recsys.artifacts import atomic_write_json  # noqa: E402
 from mla_recsys.candidate_cache import enabled_sources, load_source  # noqa: E402
 from mla_recsys.command import load_stage_context  # noqa: E402
+from mla_recsys.config import to_plain_dict  # noqa: E402
 from mla_recsys.data import read_request_parquet, request_example, stable_partition  # noqa: E402
 from mla_recsys.fusion import fuse_rankings  # noqa: E402
 from mla_recsys.temporal_candidates import (  # noqa: E402
@@ -41,6 +45,53 @@ def cached_top(
     }
 
 
+def _temporal_worker(
+    payload: tuple[dict, str, str, str, list[dict]],
+) -> tuple[str, dict[str, list[dict]]]:
+    cfg_dict, run_path_raw, split, source, requests = payload
+    return source, temporal_rankings(
+        cfg=OmegaConf.create(cfg_dict),
+        run_path=Path(run_path_raw),
+        split=split,
+        source=source,
+        requests=requests,
+    )
+
+
+def temporal_rankings_by_source(
+    *,
+    cfg: object,
+    run_path: Path,
+    split: str,
+    sources: list[str],
+    requests: list[dict],
+    workers: int,
+) -> dict[str, dict[str, list[dict]]]:
+    if not sources:
+        return {}
+    effective_workers = min(max(1, int(workers)), len(sources))
+    if effective_workers == 1 or not sys.platform.startswith("linux"):
+        return {
+            source: temporal_rankings(
+                cfg=cfg,
+                run_path=run_path,
+                split=split,
+                source=source,
+                requests=requests,
+            )
+            for source in sources
+        }
+    cfg_dict = to_plain_dict(cfg)
+    payloads = [
+        (cfg_dict, str(run_path), split, source, requests) for source in sources
+    ]
+    with ProcessPoolExecutor(
+        max_workers=effective_workers,
+        mp_context=multiprocessing.get_context("spawn"),
+    ) as executor:
+        return dict(executor.map(_temporal_worker, payloads))
+
+
 def main() -> int:
     context = load_stage_context("Validate sampled cached and direct retrieval parity")
     cfg = context.cfg
@@ -49,6 +100,7 @@ def main() -> int:
     requests_per_split = int(cfg.data.smoke_requests_per_split)
     top_k = int(cfg.evaluation.submission_top_k)
     sources = enabled_sources(cfg)
+    temporal_sources = [source for source in sources if is_temporal_source(cfg, source)]
     specs = {
         source: load_source(cfg, source)
         for source in sources
@@ -71,17 +123,14 @@ def main() -> int:
             context.store.path / "data" / f"{split}_requests.parquet"
         )[:requests_per_split]
         checked_by_split[split] = len(requests)
-        temporal_by_source = {
-            source: temporal_rankings(
-                cfg=cfg,
-                run_path=context.store.path,
-                split=split,
-                source=source,
-                requests=requests,
-            )
-            for source in sources
-            if is_temporal_source(cfg, source)
-        }
+        temporal_by_source = temporal_rankings_by_source(
+            cfg=cfg,
+            run_path=context.store.path,
+            split=split,
+            sources=temporal_sources,
+            requests=requests,
+            workers=int(cfg.evaluation.get("parity_temporal_workers", 1)),
+        )
         for request in requests:
             rankings = {
                 source: (
