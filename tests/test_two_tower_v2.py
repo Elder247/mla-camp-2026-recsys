@@ -14,6 +14,7 @@ from two_tower_v2.data import enrich_rows, pack_bags, source_fields, yt_read_opt
 from two_tower_v2.model import TwoTowerV2, embedding_dimension  # noqa: E402
 from two_tower_v2.training import positive_mask, retrieval_objective  # noqa: E402
 from scripts.train_two_tower_v2 import load_config  # noqa: E402
+from scripts.finetune_two_tower_validation import select_rows  # noqa: E402
 
 
 def test_embedding_dimension_uses_formula_rounding_and_caps() -> None:
@@ -198,3 +199,15 @@ def test_v3_config_adds_bpe_capacity_without_changing_old_config() -> None:
     assert new.training.symmetric_weight == 1.0
     assert new.training.batch_size == 1024
     assert new.model.deep_residual
+
+
+def test_validation_finetune_split_is_strictly_temporal() -> None:
+    rows = [
+        {"show_time": 10, "hit_log_id": 3},
+        {"show_time": 7, "hit_log_id": 2},
+        {"show_time": 20, "hit_log_id": 1},
+    ]
+    temporal = select_rows(rows, scope="temporal_fit", boundary=15)
+    assert [row["hit_log_id"] for row in temporal] == [2, 3]
+    full = select_rows(rows, scope="full", boundary=15)
+    assert [row["hit_log_id"] for row in full] == [2, 3, 1]
