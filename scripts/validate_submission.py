@@ -19,7 +19,7 @@ from mla_recsys.submission import validate_submission  # noqa: E402
 def main() -> int:
     context = load_stage_context(
         "Strictly validate the run test prediction",
-        extra_keys=("prediction",),
+        extra_keys=("prediction", "valid_banner_index"),
     )
     prediction = Path(
         context.values.get(
@@ -29,7 +29,10 @@ def main() -> int:
     )
     requests = read_request_parquet(context.store.path / "data" / "test_requests.parquet")
     expected = {int(row["hit_log_id"]) for row in requests}
-    index = pq.read_table(context.cfg.paths.banner_index, columns=["BannerID"])
+    valid_banner_index = Path(
+        context.values.get("valid_banner_index", str(context.cfg.paths.banner_index))
+    )
+    index = pq.read_table(valid_banner_index, columns=["BannerID"])
     valid = {int(value) for value in index["BannerID"].to_pylist()}
     report = validate_submission(
         prediction,
@@ -38,6 +41,7 @@ def main() -> int:
         top_k=int(context.cfg.evaluation.submission_top_k),
         allow_short=bool(context.cfg.submission.allow_fewer_than_top_k),
     )
+    report["valid_banner_index"] = str(valid_banner_index)
     atomic_write_json(context.store.path / "metrics" / "submission_validation.json", report)
     context.store.update_result(submission_validation=report)
     print(json.dumps(report, indent=2))
@@ -46,4 +50,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
