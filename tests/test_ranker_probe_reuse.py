@@ -120,6 +120,13 @@ def test_history_feature_profile_reuses_only_true_upstream_contracts() -> None:
     assert not reusable_metric("merge_test.json", "history_features")
 
 
+def test_ranker_profile_recomputes_submission_and_validation() -> None:
+    assert not reusable_stage("train_ranker", "ranker")
+    assert not reusable_stage("make_submission", "ranker")
+    assert not reusable_stage("validate_submission", "ranker")
+    assert reusable_stage("build_features_test", "ranker")
+
+
 def test_validate_donor_requires_successful_parity(tmp_path: Path) -> None:
     donor_cfg = config(loss="YetiRankPairwise")
     (tmp_path / "config.yaml").write_text(OmegaConf.to_yaml(donor_cfg))

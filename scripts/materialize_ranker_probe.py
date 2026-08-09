@@ -21,7 +21,12 @@ from mla_recsys.config import compose_config, parse_cli_dotlist, to_plain_dict  
 UPSTREAM_DIRECTORIES = ("data", "counters", "candidates", "features")
 UPSTREAM_METRIC_PREFIXES = ("generate_", "merge_", "features_")
 UPSTREAM_METRIC_NAMES = {"data.json", "cache_parity.json"}
-DOWNSTREAM_STAGES = {"train_ranker", "evaluate_run", "make_submission"}
+DOWNSTREAM_STAGES = {
+    "train_ranker",
+    "evaluate_run",
+    "make_submission",
+    "validate_submission",
+}
 
 
 def ranker_probe_semantics(cfg: object) -> dict:
