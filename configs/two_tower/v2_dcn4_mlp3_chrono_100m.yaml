@@ -1,0 +1,18 @@
+extends: v2_dcn4_mlp3_full.yaml
+
+experiment:
+  name: two_tower_v2_dcn4_mlp3_chrono_100m
+
+paths:
+  train_table: //tmp/astrofimuk_mla_two_stage/train_clicks_100m_v1
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v2_dcn4_mlp3_chrono_100m
+
+tracking:
+  underdeep:
+    run_name: two-tower-v2-dcn4-mlp3-chrono-100m
+
+training:
+  strict_chronological: true
+  shuffle_buffer: 1
+  validate_every_rows: 2000000
+  log_every: 500
