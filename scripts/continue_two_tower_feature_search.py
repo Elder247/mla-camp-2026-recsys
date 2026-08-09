@@ -74,10 +74,20 @@ def trial_metrics(probe: Path) -> dict[str, float]:
     if payload.get("status") != "completed":
         raise RuntimeError(f"Probe is not completed: {probe}: {payload.get('status')}")
     current = payload["metrics"]["current"]
+    oracle = payload["metrics"]["oracle_union"]
+    complementarity = payload.get("complementarity") or payload.get("metrics", {}).get(
+        "complementarity", {}
+    )
     return {
         "recall_at_50": float(current["50"]["recall"]),
         "sourcecost_recall_at_50": float(current["50"]["sourcecost_recall"]),
         "sourcecost_recall_at_500": float(current["500"]["sourcecost_recall"]),
+        "oracle_sourcecost_recall_at_50": float(
+            oracle["50"]["sourcecost_recall"]
+        ),
+        "new_only_sourcecost_share": float(
+            complementarity.get("new_only_sourcecost_share", 0.0)
+        ),
     }
 
 
@@ -95,7 +105,9 @@ def select_trial(
     return max(
         eligible,
         key=lambda trial: (
+            trial["metrics"]["oracle_sourcecost_recall_at_50"],
             trial["metrics"]["sourcecost_recall_at_50"],
+            trial["metrics"]["new_only_sourcecost_share"],
             trial["metrics"]["recall_at_50"],
             trial["metrics"]["sourcecost_recall_at_500"],
         ),
