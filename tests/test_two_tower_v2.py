@@ -10,7 +10,13 @@ torch = pytest.importorskip("torch")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from two_tower_v2.data import enrich_rows, pack_bags, source_fields, yt_read_options  # noqa: E402
+from two_tower_v2.data import (  # noqa: E402
+    enrich_rows,
+    pack_bags,
+    source_fields,
+    wide_feature_bucket,
+    yt_read_options,
+)
 from two_tower_v2.model import TwoTowerV2, embedding_dimension  # noqa: E402
 from two_tower_v2.training import (  # noqa: E402
     positive_mask,
@@ -252,6 +258,7 @@ def test_v6_config_adds_existing_context_and_ad_metadata() -> None:
     assert cfg.model.query_cardinalities.age_bucket_ids == 128
     assert cfg.model.query_cardinalities.gender_ids == 8
     assert cfg.model.banner_cardinalities.client_id_ids == 65536
+    assert cfg.model.banner_cardinalities.banner_id_hash2_ids == 262144
     assert cfg.model.banner_cardinalities.caesar_sku_id_ids == 65536
     assert cfg.model.banner_cardinalities.product_price_bucket_ids == 256
     assert cfg.model.banner_cardinalities.url_domain_ids == 65536
@@ -269,6 +276,7 @@ def test_v6_config_adds_existing_context_and_ad_metadata() -> None:
         "caesar_sku_id_ids",
         "product_price",
         "banner_url",
+        "banner_id",
     } <= required
 
 
@@ -289,6 +297,23 @@ def test_product_price_and_url_domain_features_are_bounded() -> None:
     )
     assert rows[0]["product_price_bucket_ids"] == [63]
     assert 0 <= rows[0]["url_domain_ids"][0] < 128
+
+
+def test_second_banner_hash_is_independent_and_config_gated() -> None:
+    rows = enrich_rows(
+        [{"banner_id": 123456}],
+        cardinalities={"banner_id_hash2_ids": 262144},
+        tokenizer=None,
+    )
+    expected = wide_feature_bucket("banner2:123456") % 262144
+    assert rows[0]["banner_id_hash2_ids"] == [expected]
+
+
+def test_v7_uses_more_in_batch_negatives() -> None:
+    cfg = load_config(
+        ROOT / "configs" / "two_tower" / "v7_large_batch_chrono_10m.yaml"
+    )
+    assert cfg.training.batch_size == 4096
 
 
 def test_validation_finetune_split_is_strictly_temporal() -> None:

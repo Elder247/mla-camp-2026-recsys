@@ -1,0 +1,14 @@
+extends: v6_context_metadata_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v7_large_batch_chrono_10m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_chrono_10m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v7-large-batch-chrono-10m
+
+training:
+  batch_size: 4096

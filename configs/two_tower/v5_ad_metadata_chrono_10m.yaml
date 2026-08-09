@@ -15,6 +15,7 @@ tracking:
 
 model:
   banner_cardinalities:
+    banner_id_hash2_ids: 262144
     client_id_ids: 65536
     order_id_ids: 65536
     caesar_model_id_ids: 65536

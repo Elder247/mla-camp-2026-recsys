@@ -160,6 +160,7 @@ def main() -> int:
                 "age_bucket_ids": [max(0, int(data["Age"][index] or 0))],
                 "gender_ids": [max(0, int(data["Gender"][index] or 0))],
                 "banner_id_ids": [feature_bucket(str(banner))],
+                "banner_id": banner,
                 "ad_group_id_ids": [feature_bucket(str(group))],
                 "client_id_ids": [
                     feature_bucket(str(data["ClientID"][index] or 0))

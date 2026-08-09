@@ -19,6 +19,7 @@ BANNER_FIELDS = (
 ALL_FIELDS = QUERY_FIELDS + BANNER_FIELDS
 TEXT_SOURCE_FIELDS = ("query_text", "title_text", "text_text", "banner_url")
 NUMERIC_SOURCE_FIELDS = ("source_cost", "product_price")
+INTEGER_SOURCE_FIELDS = ("banner_id",)
 BPE_FIELDS = ("query_bpe_ids", "title_bpe_ids", "text_bpe_ids")
 DIRECT_SOURCE_FIELDS = (
     "device_ids",
@@ -34,6 +35,7 @@ DERIVED_FIELDS = (
     "source_cost_bucket_ids",
     "product_price_bucket_ids",
     "url_domain_ids",
+    "banner_id_hash2_ids",
 )
 
 
@@ -50,6 +52,8 @@ def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
         fields.append("product_price")
     if "url_domain_ids" in cardinalities:
         fields.append("banner_url")
+    if "banner_id_hash2_ids" in cardinalities:
+        fields.append("banner_id")
     return tuple(fields)
 
 
@@ -58,12 +62,19 @@ def _source_value(raw: Mapping[str, Any], name: str) -> Any:
         return str(raw.get(name) or "")
     if name in NUMERIC_SOURCE_FIELDS:
         return float(raw.get(name) or 0.0)
+    if name in INTEGER_SOURCE_FIELDS:
+        return int(raw.get(name) or 0)
     return [int(value) for value in raw.get(name) or ()]
 
 
 def feature_bucket(value: str) -> int:
     digest = hashlib.md5(value.encode("utf-8")).digest()
     return int.from_bytes(digest[:2], "little", signed=False)
+
+
+def wide_feature_bucket(value: str) -> int:
+    digest = hashlib.md5(value.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "little", signed=False)
 
 
 def deterministic_sample(value: object, *, fraction: float, seed: int) -> bool:
@@ -268,6 +279,13 @@ def enrich_rows(
             value = str(row.get("banner_url") or "").lower()
             host = value.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
             row["url_domain_ids"] = [feature_bucket(host) % cardinality]
+    if "banner_id_hash2_ids" in cardinalities:
+        cardinality = int(cardinalities["banner_id_hash2_ids"])
+        for row in enriched:
+            banner_id = int(row.get("banner_id") or 0)
+            row["banner_id_hash2_ids"] = [
+                wide_feature_bucket(f"banner2:{banner_id}") % cardinality
+            ]
     return enriched
 
 

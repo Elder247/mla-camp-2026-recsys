@@ -506,6 +506,7 @@ def _candidate_row(columns: dict[str, list[Any]], index: int) -> tuple[dict, dic
     title = as_text(columns["BannerTitle"][index])
     text = as_text(columns["BannerText"][index])
     row = {
+        "banner_id": banner_id,
         "banner_id_ids": [feature_bucket(str(banner_id))],
         "ad_group_id_ids": [feature_bucket(str(group_id))],
         "title_word_ids": [feature_bucket(token) for token in tokenize(title)[:32]],
