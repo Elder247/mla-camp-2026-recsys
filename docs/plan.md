@@ -490,3 +490,27 @@ Mean-SourceCost 10M gate (`20260809_0530_i2_mean10m_temporal`):
   single model is small (`+0.044 pp`) but stable; because a full cached run is
   only minutes, it is promoted as a low-cost private check rather than claimed
   as a structural improvement.
+
+Cached QueryRMSE/YetiRank ensemble full/private evidence
+(`20260809_0601_i2_ensemble_full`):
+
+- the corrected ranker-reuse contract deliberately recomputed
+  `train_ranker`, `make_submission` and `validate_submission`; 923 upstream
+  files (2.94 GB logical) were hardlinked from the completed full donor;
+- the full YetiRank fit took `123.0s`, two-model inference `36.7s` and strict
+  validation `1.3s`. Both CatBoost artifacts have the same ordered 133-feature
+  contract; UnderDeep initialization, stage metrics, summary and finish were
+  recorded successfully;
+- the 2.62 MB submission (SHA-256
+  `2d4dea778e9e7ef5de58fcbc14cd029dd67171513b793cee790e90f9aeacd603`)
+  contains exactly 10,000 unique requests and 50 unique indexed banners per
+  request, with no null or invalid IDs;
+- leaderboard upload `wf100m qrmse+yeti ensemble e02 n75` at
+  `2026-08-09 06:19:48 MSK` scored SC Recall@50 `0.6216`, Recall@50 `0.5066`
+  and Recall@10 `0.3639`. The private gain over the accepted QueryRMSE model is
+  `+0.10 pp`, consistent in direction with the small temporal gain, so the
+  ensemble becomes the new personal best;
+- subsequent feature/candidate ideas use `1M` only for code/schema smoke and
+  the existing `10M` walk-forward artifact for the metric gate. A 100M build is
+  allowed only after a non-noisy improvement in candidate complementarity,
+  SC Recall@500 and final SC Recall@50.
