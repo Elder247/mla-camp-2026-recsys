@@ -1,0 +1,15 @@
+extends: v3_bpe_multipos_chrono100m_valfit_temporal.yaml
+
+experiment:
+  name: two_tower_v3_bpe_multipos_chrono100m_valfit_full
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v3_bpe_multipos_chrono100m_valfit_full
+
+tracking:
+  underdeep:
+    run_name: two-tower-v3-bpe-multipos-chrono100m-valfit-full
+
+finetune:
+  scope: full
+  expected_rows: 10000
