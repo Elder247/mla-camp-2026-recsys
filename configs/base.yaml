@@ -76,6 +76,9 @@ ranker:
   l2_leaf_reg: 5.0
   early_stopping_rounds: 75
   random_seed: ${project.seed}
+  # Zero keeps the complete leakage-safe OOF train. Positive values retain
+  # whole request groups from only the most recent N days before the fit end.
+  training_window_days: 0
   log_sc_scale: 1000000.0
   raw_sc_scale: 1000000.0
   group_weight:

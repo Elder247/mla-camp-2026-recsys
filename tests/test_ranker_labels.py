@@ -5,7 +5,7 @@ import pyarrow as pa
 import pytest
 from omegaconf import OmegaConf
 
-from scripts.train_ranker import group_weight_array, label_spec
+from scripts.train_ranker import filter_training_window, group_weight_array, label_spec
 
 
 def test_raw_sourcecost_label_is_not_log_surrogate() -> None:
@@ -72,3 +72,50 @@ def test_group_weight_requires_contiguous_groups() -> None:
 
     with pytest.raises(ValueError, match="contiguous"):
         group_weight_array(table, cfg)
+
+
+def test_training_window_keeps_complete_recent_request_groups() -> None:
+    features = pa.table(
+        {
+            "request_id": ["old", "old", "recent", "recent", "latest"],
+            "group_id": [1, 1, 2, 2, 3],
+        }
+    )
+    requests = pa.table(
+        {
+            "request_id": ["old", "recent", "latest"],
+            "show_time": [100, 200_000, 300_000],
+        }
+    )
+    cfg = OmegaConf.create({"ranker": {"training_window_days": 2.0}})
+
+    filtered, stats = filter_training_window(features, requests, cfg)
+
+    assert filtered["request_id"].to_pylist() == ["recent", "recent", "latest"]
+    assert stats["cutoff_show_time"] == 127_200
+    assert stats["requests_after"] == 2
+    assert stats["rows_before"] == 5
+    assert stats["rows_after"] == 3
+
+
+def test_zero_training_window_preserves_all_rows() -> None:
+    features = pa.table({"group_id": [1, 1, 2]})
+    requests = pa.table({"request_id": ["a"], "show_time": [100]})
+    cfg = OmegaConf.create({"ranker": {"training_window_days": 0}})
+
+    filtered, stats = filter_training_window(features, requests, cfg)
+
+    assert filtered is features
+    assert stats == {
+        "enabled": False,
+        "days": 0.0,
+        "rows_before": 3,
+        "rows_after": 3,
+    }
+
+
+def test_negative_training_window_is_rejected() -> None:
+    cfg = OmegaConf.create({"ranker": {"training_window_days": -1}})
+
+    with pytest.raises(ValueError, match="non-negative"):
+        filter_training_window(pa.table({"group_id": [1]}), pa.table({}), cfg)

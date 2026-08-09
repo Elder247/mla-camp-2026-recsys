@@ -39,6 +39,58 @@ def positive_groups_only(table: pa.Table) -> pa.Table:
     return table.filter(pc.equal(table["group_has_positive"], True))
 
 
+def filter_training_window(
+    table: pa.Table,
+    requests: pa.Table,
+    cfg: object,
+) -> tuple[pa.Table, dict[str, object]]:
+    """Keep complete ranking groups from the most recent configured window."""
+    days = float(cfg.ranker.get("training_window_days", 0.0))
+    if days < 0.0:
+        raise ValueError("ranker.training_window_days must be non-negative")
+    if days == 0.0:
+        return table, {
+            "enabled": False,
+            "days": 0.0,
+            "rows_before": table.num_rows,
+            "rows_after": table.num_rows,
+        }
+    if "request_id" not in table.column_names:
+        raise ValueError("request_id is required for a ranker training window")
+    required = {"request_id", "show_time"}
+    if not required.issubset(requests.column_names):
+        raise ValueError("request table must contain request_id and show_time")
+
+    request_ids = requests["request_id"].combine_chunks().to_pylist()
+    show_times = requests["show_time"].combine_chunks().to_pylist()
+    timed = [
+        (str(request_id), int(show_time))
+        for request_id, show_time in zip(request_ids, show_times)
+        if show_time is not None
+    ]
+    if not timed:
+        raise ValueError("No timestamped requests are available for training window")
+    maximum = max(show_time for _, show_time in timed)
+    cutoff = maximum - int(days * 24 * 60 * 60)
+    allowed = pa.array(
+        [request_id for request_id, show_time in timed if show_time >= cutoff],
+        type=pa.string(),
+    )
+    filtered = table.filter(pc.is_in(table["request_id"], value_set=allowed))
+    if filtered.num_rows == 0:
+        raise RuntimeError("Ranker training window removed every feature row")
+    return filtered, {
+        "enabled": True,
+        "days": days,
+        "cutoff_show_time": cutoff,
+        "maximum_show_time": maximum,
+        "requests_before": len(timed),
+        "requests_after": len(allowed),
+        "rows_before": table.num_rows,
+        "rows_after": filtered.num_rows,
+    }
+
+
 def group_weight_array(
     table: pa.Table,
     cfg: object,
@@ -136,13 +188,29 @@ def main() -> int:
 
     names = configured_feature_names(cfg)
     label_column, label_scale = label_spec(cfg)
+    training_window_enabled = float(cfg.ranker.get("training_window_days", 0.0)) > 0.0
     needed = list(
         dict.fromkeys(
-            ["group_id", "group_has_positive", label_column, "label_raw_sc", *names]
+            [
+                "group_id",
+                "group_has_positive",
+                label_column,
+                "label_raw_sc",
+                *(["request_id"] if training_window_enabled else []),
+                *names,
+            ]
         )
     )
     train_all = read_features(context.store.path, train_split, needed)
-    train = positive_groups_only(train_all)
+    train_windowed, train_window_stats = filter_training_window(
+        train_all,
+        pq.read_table(
+            context.store.path / "data" / f"{train_split}_requests.parquet",
+            columns=["request_id", "show_time"],
+        ),
+        cfg,
+    )
+    train = positive_groups_only(train_windowed)
     if train.num_rows == 0:
         raise RuntimeError("No natural-pool positive groups in train")
     train_group_weight, train_group_weight_stats = group_weight_array(train, cfg)
@@ -212,12 +280,14 @@ def main() -> int:
         "split": str(cfg.split.version),
         "scope": str(cfg.runtime.scope),
         "train_rows_all": train_all.num_rows,
+        "train_rows_windowed": train_windowed.num_rows,
         "train_rows_fit": train.num_rows,
         "validation_rows_fit": validation_rows,
         "best_iteration": model.get_best_iteration(),
         "best_score": model.get_best_score(),
         "label_column": label_column,
         "label_scale": label_scale,
+        "training_window": train_window_stats,
         "group_weight": {
             "train": train_group_weight_stats,
             "validation": validation_group_weight_stats,
