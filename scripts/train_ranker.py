@@ -262,8 +262,15 @@ def main() -> int:
     label_column, label_scale = label_spec(cfg)
     training_window_enabled = float(cfg.ranker.get("training_window_days", 0.0)) > 0.0
     selection_metric = str(cfg.ranker.get("selection_metric", "catboost_eval"))
-    sourcecost_selection = selection_metric == "sourcecost_recall_at_50"
-    if selection_metric not in {"catboost_eval", "sourcecost_recall_at_50"}:
+    sourcecost_selection = selection_metric in {
+        "sourcecost_recall",
+        "sourcecost_recall_at_50",
+    }
+    if selection_metric not in {
+        "catboost_eval",
+        "sourcecost_recall",
+        "sourcecost_recall_at_50",
+    }:
         raise ValueError(f"Unsupported ranker.selection_metric: {selection_metric}")
     needed = list(
         dict.fromkeys(
