@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from omegaconf import OmegaConf
+
+from scripts.materialize_ranker_probe import (
+    materialize_tree,
+    ranker_probe_semantics,
+    validate_donor,
+)
+
+
+def config(*, loss: str, feature_version: str = "f1", reuse: str | None = None):
+    return OmegaConf.create(
+        {
+            "runtime": {"run_id": "run", "resume": True, "scope": "offline"},
+            "ranker": {"loss_function": loss},
+            "candidates": {"reuse_run": reuse, "rrf_constant": 40},
+            "features": {"reuse_run": reuse, "version": feature_version},
+            "data": {"partition_count": 2},
+        }
+    )
+
+
+def test_ranker_loss_and_reuse_paths_do_not_change_upstream_semantics() -> None:
+    donor = config(loss="YetiRankPairwise")
+    probe = config(loss="QueryRMSE", reuse="/donor")
+
+    assert ranker_probe_semantics(donor) == ranker_probe_semantics(probe)
+
+
+def test_feature_change_rejects_upstream_reuse() -> None:
+    donor = config(loss="YetiRankPairwise")
+    probe = config(loss="QueryRMSE", feature_version="f2")
+
+    assert ranker_probe_semantics(donor) != ranker_probe_semantics(probe)
+
+
+def test_materialize_tree_preserves_files_without_overwrite(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    (source / "part.parquet").write_bytes(b"immutable")
+
+    files, logical_bytes = materialize_tree(source, target)
+
+    assert files == 1
+    assert logical_bytes == len(b"immutable")
+    assert (target / "part.parquet").read_bytes() == b"immutable"
+    with pytest.raises(FileExistsError):
+        materialize_tree(source, target)
+
+
+def test_validate_donor_requires_successful_parity(tmp_path: Path) -> None:
+    donor_cfg = config(loss="YetiRankPairwise")
+    (tmp_path / "config.yaml").write_text(OmegaConf.to_yaml(donor_cfg))
+    (tmp_path / "result.json").write_text(json.dumps({"status": "completed"}))
+    for relative in ("data", "counters", "candidates", "features", "metrics"):
+        (tmp_path / relative).mkdir()
+    (tmp_path / "metrics" / "cache_parity.json").write_text(
+        json.dumps({"ok": False})
+    )
+
+    with pytest.raises(ValueError, match="parity"):
+        validate_donor(tmp_path, config(loss="QueryRMSE"))
