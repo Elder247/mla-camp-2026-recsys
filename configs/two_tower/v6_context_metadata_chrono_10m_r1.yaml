@@ -1,0 +1,11 @@
+extends: v6_context_metadata_chrono_10m.yaml
+
+experiment:
+  name: two_tower_v6_context_metadata_chrono_10m_r1
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v6_context_metadata_chrono_10m_model_r1
+
+tracking:
+  underdeep:
+    run_name: two-tower-v6-context-metadata-chrono-10m-r1

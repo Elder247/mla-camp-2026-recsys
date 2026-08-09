@@ -344,6 +344,12 @@ def test_validation_source_can_neutralize_new_optional_fields(monkeypatch) -> No
     assert source.read_fields == ("banner_id_ids",)
 
 
+def test_source_rows_drop_null_elements_inside_categorical_lists() -> None:
+    from two_tower_v2.data import _source_value
+
+    assert _source_value({"device_ids": [None, 17]}, "device_ids") == [17]
+
+
 def test_validation_finetune_split_is_strictly_temporal() -> None:
     rows = [
         {"show_time": 10, "hit_log_id": 3},

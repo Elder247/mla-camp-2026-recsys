@@ -64,7 +64,7 @@ def _source_value(raw: Mapping[str, Any], name: str) -> Any:
         return float(raw.get(name) or 0.0)
     if name in INTEGER_SOURCE_FIELDS:
         return int(raw.get(name) or 0)
-    return [int(value) for value in raw.get(name) or ()]
+    return [int(value) for value in raw.get(name) or () if value is not None]
 
 
 def feature_bucket(value: str) -> int:

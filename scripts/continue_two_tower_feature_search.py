@@ -38,7 +38,7 @@ TRIALS = (
     },
     {
         "name": "v6_context_metadata",
-        "probe": Path("/tmp/20260809_1355_i6_tt_context_10m_probe.probe.json"),
+        "probe": Path("/tmp/20260809_1355_i6_tt_context_10m_probe_r1.probe.json"),
         "config": ROOT / "configs/two_tower/v6_context_metadata_chrono_100m.yaml",
         "artifact": Path(
             "/home/astrofimuk/workspace/mla_two_stage/artifacts/"
