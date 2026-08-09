@@ -121,6 +121,55 @@ class FastMergeTest(unittest.TestCase):
         self.assertTrue(banner_three["history_query_present"])
         self.assertTrue(banner_three["history_region_present"])
 
+    def test_temporal_history_alias_preserves_aggregates_without_double_counting(self) -> None:
+        cfg = compose_config(
+            "i2_walk_forward_100m_s10_fast_quality",
+            mode="offline",
+            overrides=[
+                "data.partition_count=1",
+                "candidates.union_max_candidates=3",
+                "candidates.ranker_pool=3",
+            ],
+        )
+        rows = {
+            source: []
+            for source, item in cfg.candidates.generators.items()
+            if bool(item.get("enabled", False))
+        }
+        rows["history_query_sc_oof_v1"] = [
+            source_row(3, 1, 500.0, clicks=4, source_cost=500.0, query=True)
+        ]
+        rows["history_query_region_oof_v1"] = [
+            source_row(
+                3,
+                1,
+                200.0,
+                clicks=2,
+                source_cost=200.0,
+                query=True,
+                region=True,
+            )
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            run_path = Path(directory)
+            for source, values in rows.items():
+                path = source_part_path(run_path, "train", source, 0)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                pq.write_table(pa.Table.from_pylist(values, schema=SOURCE_SCHEMA), path)
+            table = merge_partition(
+                cfg=cfg,
+                run_path=run_path,
+                split="train",
+                partition=0,
+                requests=[{"request_id": "r1", "hit_log_id": 11}],
+            )
+
+        row = table.to_pylist()[0]
+        self.assertEqual(row["history_click_count"], 4)
+        self.assertEqual(row["history_source_cost_sum"], 500.0)
+        self.assertTrue(row["history_query_present"])
+        self.assertTrue(row["history_region_present"])
+
 
 if __name__ == "__main__":
     unittest.main()

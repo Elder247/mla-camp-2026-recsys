@@ -168,6 +168,10 @@ def _candidate_from_merged(
         "banner_id": banner_id,
         "rrf_score": float(row["rrf_score"]),
         "source_count": int(row["source_count"]),
+        "history_click_count": int(row["history_click_count"]),
+        "history_source_cost_sum": float(row["history_source_cost_sum"]),
+        "history_query_present": bool(row["history_query_present"]),
+        "history_region_present": bool(row["history_region_present"]),
         "retrieval": {},
         **index.get(banner_id),
     }

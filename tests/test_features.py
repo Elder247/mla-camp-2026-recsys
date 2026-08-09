@@ -96,6 +96,39 @@ class FeatureTest(unittest.TestCase):
         self.assertEqual(values["counter__banner__all__present"], 1.0)
         self.assertEqual(values["source_cost_x_banner_sc_avg"], 4938268.0)
 
+    def test_temporal_history_root_aggregates_feed_legacy_history_features(self) -> None:
+        generators = ["history_query_sc_oof"]
+        candidate = {
+            "banner_id": 1,
+            "title": "кофе",
+            "text": "",
+            "source_cost": 100.0,
+            "rrf_score": 0.1,
+            "source_count": 1,
+            "history_click_count": 4,
+            "history_source_cost_sum": 500.0,
+            "history_query_present": True,
+            "history_region_present": False,
+            "retrieval": {
+                "history_query_sc_oof": {
+                    "rank": 1,
+                    "reciprocal_rank": 1.0,
+                    "score": 500.0,
+                }
+            },
+        }
+        names = feature_names(generators)
+        row = extract_feature_rows(
+            {"query": "кофе", "context": {}},
+            [candidate],
+            generators,
+        )[0]
+        values = dict(zip(names, row))
+        self.assertAlmostEqual(values["history_click_count_log1p"], 1.6094379)
+        self.assertAlmostEqual(values["history_source_cost_log1p"], 6.2166061)
+        self.assertEqual(values["history_query_present"], 1.0)
+        self.assertEqual(values["history_region_present"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

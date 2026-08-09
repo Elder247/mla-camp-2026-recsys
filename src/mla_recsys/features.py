@@ -223,6 +223,26 @@ def extract_feature_rows(
         history_retrieval = candidate.get("retrieval", {}).get("history", {})
         history_contributions = history_retrieval.get("contributions") or {}
         history_sources = history_contributions.get("history") or {}
+        history_click_count = float(
+            candidate.get(
+                "history_click_count",
+                history_contributions.get("click_count", 0.0),
+            )
+            or 0.0
+        )
+        history_source_cost_sum = float(
+            candidate.get(
+                "history_source_cost_sum",
+                history_contributions.get("source_cost_sum", 0.0),
+            )
+            or 0.0
+        )
+        history_query_present = bool(
+            candidate.get("history_query_present", "query" in history_sources)
+        )
+        history_region_present = bool(
+            candidate.get("history_region_present", "query_region" in history_sources)
+        )
         source_cost = float(candidate.get("source_cost", 0.0) or 0.0)
         product_price = float(candidate.get("product_price", 0.0) or 0.0)
         group_mean = float(candidate.get("group_source_cost_mean", 0.0) or 0.0)
@@ -251,13 +271,13 @@ def extract_feature_rows(
             "exact_phrase_title": float(bool(query) and query in title),
             "source_cost_log1p": math.log1p(max(0.0, source_cost)),
             "history_click_count_log1p": math.log1p(
-                max(0.0, float(history_contributions.get("click_count", 0.0)))
+                max(0.0, history_click_count)
             ),
             "history_source_cost_log1p": math.log1p(
-                max(0.0, float(history_contributions.get("source_cost_sum", 0.0)))
+                max(0.0, history_source_cost_sum)
             ),
-            "history_query_present": float("query" in history_sources),
-            "history_region_present": float("query_region" in history_sources),
+            "history_query_present": float(history_query_present),
+            "history_region_present": float(history_region_present),
             "retrieval_min_rank": min(ranks) if ranks else 0.0,
             "retrieval_mean_rank": sum(ranks) / len(ranks) if ranks else 0.0,
             "lexical_only": float(lexical and not neural and not historical),

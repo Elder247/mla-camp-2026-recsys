@@ -128,11 +128,27 @@ def merge_partition(
                 )
                 state["rrf_score"] += weights[source] / (rrf_constant + rank)
                 state["retrieval"][source] = (rank, score)
-                if aliases[source] == "history":
-                    state["history_click_count"] = clicks
-                    state["history_source_cost_sum"] = source_cost
-                    state["history_query_present"] = query
-                    state["history_region_present"] = region
+                is_history = (
+                    aliases[source] == "history"
+                    or str(cfg.candidates.generators[source].get("kind") or "")
+                    == "temporal_history"
+                )
+                if is_history:
+                    # Query-region history is a subset of query history, so
+                    # summing the two would double count the same clicks. Keep
+                    # the strongest available aggregate and union provenance.
+                    state["history_click_count"] = max(
+                        int(state["history_click_count"]), clicks
+                    )
+                    state["history_source_cost_sum"] = max(
+                        float(state["history_source_cost_sum"]), source_cost
+                    )
+                    state["history_query_present"] = bool(
+                        state["history_query_present"] or query
+                    )
+                    state["history_region_present"] = bool(
+                        state["history_region_present"] or region
+                    )
 
         ranked = heapq.nsmallest(
             min(max_candidates, len(merged)),
