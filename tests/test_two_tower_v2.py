@@ -12,7 +12,11 @@ sys.path.insert(0, str(ROOT))
 
 from two_tower_v2.data import enrich_rows, pack_bags, source_fields, yt_read_options  # noqa: E402
 from two_tower_v2.model import TwoTowerV2, embedding_dimension  # noqa: E402
-from two_tower_v2.training import positive_mask, retrieval_objective  # noqa: E402
+from two_tower_v2.training import (  # noqa: E402
+    positive_mask,
+    retrieval_objective,
+    sourcecost_example_weights,
+)
 from scripts.train_two_tower_v2 import load_config  # noqa: E402
 from scripts.finetune_two_tower_validation import select_rows  # noqa: E402
 
@@ -159,6 +163,34 @@ def test_bpe_and_query_region_features_are_derived_in_batch() -> None:
     )
 
 
+def test_source_cost_bucket_is_config_gated_and_bounded() -> None:
+    cardinalities = {"banner_id_ids": 32, "source_cost_bucket_ids": 64}
+    assert source_fields(cardinalities)[-1] == "source_cost"
+    rows = enrich_rows(
+        [
+            {"banner_id_ids": [1], "source_cost": 0.0},
+            {"banner_id_ids": [2], "source_cost": 1_000_000.0},
+        ],
+        cardinalities=cardinalities,
+        tokenizer=None,
+        source_cost_log1p_scale=8.0,
+    )
+    assert rows[0]["source_cost_bucket_ids"] == [0]
+    assert rows[1]["source_cost_bucket_ids"] == [63]
+
+
+def test_sourcecost_weights_are_bounded_mean_one_and_value_aware() -> None:
+    weights = sourcecost_example_weights(
+        [{"source_cost": 10.0}, {"source_cost": 1_000_000.0}],
+        power=0.5,
+        minimum=0.25,
+        maximum=4.0,
+        device=torch.device("cpu"),
+    )
+    assert torch.isclose(weights.mean(), torch.tensor(1.0))
+    assert weights[1] > weights[0]
+
+
 def test_multi_positive_loss_does_not_treat_duplicate_clicks_as_negatives() -> None:
     rows = [
         {"query_word_ids": [1], "region_ids": [4], "banner_id_ids": [8]},
@@ -199,6 +231,17 @@ def test_v3_config_adds_bpe_capacity_without_changing_old_config() -> None:
     assert new.training.symmetric_weight == 1.0
     assert new.training.batch_size == 1024
     assert new.model.deep_residual
+
+
+def test_v4_config_aligns_loss_and_banner_feature_with_sourcecost() -> None:
+    cfg = load_config(
+        ROOT / "configs" / "two_tower" / "v4_scweighted_chrono_10m.yaml"
+    )
+    assert cfg.model.banner_cardinalities.source_cost_bucket_ids == 256
+    assert cfg.numeric_features.source_cost_log1p_scale == 8.0
+    assert cfg.training.sourcecost_weight_power == 0.5
+    assert cfg.training.sourcecost_weight_min == 0.25
+    assert cfg.training.sourcecost_weight_max == 4.0
 
 
 def test_validation_finetune_split_is_strictly_temporal() -> None:

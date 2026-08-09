@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
@@ -17,8 +18,9 @@ BANNER_FIELDS = (
 )
 ALL_FIELDS = QUERY_FIELDS + BANNER_FIELDS
 TEXT_SOURCE_FIELDS = ("query_text", "title_text", "text_text")
+NUMERIC_SOURCE_FIELDS = ("source_cost",)
 BPE_FIELDS = ("query_bpe_ids", "title_bpe_ids", "text_bpe_ids")
-DERIVED_FIELDS = ("query_region_ids",)
+DERIVED_FIELDS = ("query_region_ids", "source_cost_bucket_ids")
 
 
 def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
@@ -27,7 +29,17 @@ def source_fields(cardinalities: Mapping[str, int]) -> tuple[str, ...]:
     fields = list(ALL_FIELDS)
     if any(name in cardinalities for name in BPE_FIELDS):
         fields.extend(TEXT_SOURCE_FIELDS)
+    if "source_cost_bucket_ids" in cardinalities:
+        fields.append("source_cost")
     return tuple(fields)
+
+
+def _source_value(raw: Mapping[str, Any], name: str) -> Any:
+    if name in TEXT_SOURCE_FIELDS:
+        return str(raw.get(name) or "")
+    if name in NUMERIC_SOURCE_FIELDS:
+        return float(raw.get(name) or 0.0)
+    return [int(value) for value in raw.get(name) or ()]
 
 
 def feature_bucket(value: str) -> int:
@@ -98,14 +110,7 @@ class YtTableSource:
             path,
             **yt_read_options(ordered=self.ordered),
         ):
-            yield {
-                name: (
-                    str(raw.get(name) or "")
-                    if name in TEXT_SOURCE_FIELDS
-                    else [int(value) for value in raw.get(name) or ()]
-                )
-                for name in self.fields
-            }
+            yield {name: _source_value(raw, name) for name in self.fields}
 
 
 class YtWeekTableSource(YtTableSource):
@@ -171,14 +176,7 @@ class YtWeekTableSource(YtTableSource):
                 seed=int(sample_seed),
             ):
                 continue
-            yield {
-                name: (
-                    str(raw.get(name) or "")
-                    if name in TEXT_SOURCE_FIELDS
-                    else [int(value) for value in raw.get(name) or ()]
-                )
-                for name in self.fields
-            }
+            yield {name: _source_value(raw, name) for name in self.fields}
 
 
 def enrich_rows(
@@ -187,6 +185,7 @@ def enrich_rows(
     cardinalities: Mapping[str, int],
     tokenizer: Any | None,
     bpe_limits: Mapping[str, int] | None = None,
+    source_cost_log1p_scale: float = 1.0,
 ) -> list[dict[str, Any]]:
     """Add config-gated BPE and query-region inputs without changing YT data."""
 
@@ -220,6 +219,17 @@ def enrich_rows(
                 ((int(token) * 16_777_619) ^ region) % cardinality
                 for token in query
             ]
+    if "source_cost_bucket_ids" in cardinalities:
+        if source_cost_log1p_scale <= 0.0:
+            raise ValueError("source_cost_log1p_scale must be positive")
+        cardinality = int(cardinalities["source_cost_bucket_ids"])
+        for row in enriched:
+            source_cost = max(0.0, float(row.get("source_cost") or 0.0))
+            bucket = min(
+                cardinality - 1,
+                int(math.log1p(source_cost) * source_cost_log1p_scale),
+            )
+            row["source_cost_bucket_ids"] = [bucket]
     return enriched
 
 

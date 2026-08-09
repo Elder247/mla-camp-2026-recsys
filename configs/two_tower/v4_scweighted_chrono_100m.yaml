@@ -1,0 +1,23 @@
+extends: v3_bpe_multipos_chrono_100m.yaml
+
+experiment:
+  name: two_tower_v4_scweighted_chrono_100m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v4_scweighted_chrono_100m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v4-scweighted-chrono-100m
+
+model:
+  banner_cardinalities:
+    source_cost_bucket_ids: 256
+
+numeric_features:
+  source_cost_log1p_scale: 8.0
+
+training:
+  sourcecost_weight_power: 0.5
+  sourcecost_weight_min: 0.25
+  sourcecost_weight_max: 4.0

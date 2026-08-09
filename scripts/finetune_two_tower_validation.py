@@ -209,6 +209,11 @@ def main() -> int:
                     cardinalities=cardinalities,
                     tokenizer=tokenizer,
                     bpe_limits=limits,
+                    source_cost_log1p_scale=float(
+                        cfg.get("numeric_features", {}).get(
+                            "source_cost_log1p_scale", 1.0
+                        )
+                    ),
                 )
                 bags = pack_bags(batch, cardinalities=cardinalities, device=device)
                 optimizer.zero_grad(set_to_none=True)
@@ -225,6 +230,24 @@ def main() -> int:
                         batch,
                         objective=str(cfg.finetune.objective),
                         symmetric_weight=float(cfg.finetune.symmetric_weight),
+                        sourcecost_weight_power=float(
+                            cfg.finetune.get(
+                                "sourcecost_weight_power",
+                                cfg.training.get("sourcecost_weight_power", 0.0),
+                            )
+                        ),
+                        sourcecost_weight_min=float(
+                            cfg.finetune.get(
+                                "sourcecost_weight_min",
+                                cfg.training.get("sourcecost_weight_min", 1.0),
+                            )
+                        ),
+                        sourcecost_weight_max=float(
+                            cfg.finetune.get(
+                                "sourcecost_weight_max",
+                                cfg.training.get("sourcecost_weight_max", 1.0),
+                            )
+                        ),
                     )
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(

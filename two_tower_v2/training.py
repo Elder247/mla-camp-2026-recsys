@@ -142,34 +142,78 @@ def positive_mask(
     )
 
 
+def sourcecost_example_weights(
+    rows: list[dict[str, Any]],
+    *,
+    power: float,
+    minimum: float,
+    maximum: float,
+    device: torch.device,
+) -> torch.Tensor:
+    """Return bounded mean-one weights aligned with SourceCost Recall."""
+
+    if power < 0.0:
+        raise ValueError("sourcecost_weight_power must be non-negative")
+    if minimum <= 0.0 or maximum < minimum:
+        raise ValueError("invalid SourceCost weight bounds")
+    if power == 0.0:
+        return torch.ones(len(rows), dtype=torch.float32, device=device)
+    values = torch.tensor(
+        [np.log1p(max(0.0, float(row.get("source_cost") or 0.0))) for row in rows],
+        dtype=torch.float32,
+        device=device,
+    )
+    positive = values[values > 0]
+    scale = positive.median() if positive.numel() else values.new_tensor(1.0)
+    weights = (values / scale.clamp_min(1.0e-6)).clamp_min(1.0e-6).pow(power)
+    weights = weights.clamp(min=minimum, max=maximum)
+    return weights / weights.mean().clamp_min(1.0e-6)
+
+
 def retrieval_objective(
     logits: torch.Tensor,
     rows: list[dict[str, Any]],
     *,
     objective: str,
     symmetric_weight: float,
+    sourcecost_weight_power: float = 0.0,
+    sourcecost_weight_min: float = 1.0,
+    sourcecost_weight_max: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    weights = sourcecost_example_weights(
+        rows,
+        power=sourcecost_weight_power,
+        minimum=sourcecost_weight_min,
+        maximum=sourcecost_weight_max,
+        device=logits.device,
+    )
     if objective == "cross_entropy":
         labels = torch.arange(len(rows), device=logits.device)
         mask = torch.eye(len(rows), dtype=torch.bool, device=logits.device)
-        return F.cross_entropy(logits.float(), labels), mask
+        losses = F.cross_entropy(logits.float(), labels, reduction="none")
+        return (losses * weights).sum() / weights.sum(), mask
     if objective != "multi_positive":
         raise ValueError(f"unknown TwoTower objective: {objective}")
     if symmetric_weight < 0:
         raise ValueError("symmetric_weight must be non-negative")
     mask = positive_mask(rows, device=logits.device)
 
-    def direction_loss(values: torch.Tensor, positives: torch.Tensor) -> torch.Tensor:
+    def direction_loss(
+        values: torch.Tensor,
+        positives: torch.Tensor,
+        row_weights: torch.Tensor,
+    ) -> torch.Tensor:
         numerator = torch.logsumexp(
             values.float().masked_fill(~positives, float("-inf")), dim=1
         )
         denominator = torch.logsumexp(values.float(), dim=1)
-        return (denominator - numerator).mean()
+        losses = denominator - numerator
+        return (losses * row_weights).sum() / row_weights.sum()
 
-    query_loss = direction_loss(logits, mask)
+    query_loss = direction_loss(logits, mask, weights)
     if symmetric_weight == 0:
         return query_loss, mask
-    banner_loss = direction_loss(logits.T, mask.T)
+    banner_loss = direction_loss(logits.T, mask.T, weights)
     return (
         query_loss + symmetric_weight * banner_loss
     ) / (1.0 + symmetric_weight), mask
@@ -199,6 +243,9 @@ def evaluate(
             cardinalities=cardinalities,
             tokenizer=tokenizer,
             bpe_limits=bpe_limits(cfg),
+            source_cost_log1p_scale=float(
+                cfg.get("numeric_features", {}).get("source_cost_log1p_scale", 1.0)
+            ),
         )
         bags = pack_bags(batch, cardinalities=cardinalities, device=device)
         with torch.autocast(
@@ -214,6 +261,15 @@ def evaluate(
             batch,
             objective=objective,
             symmetric_weight=symmetric_weight,
+            sourcecost_weight_power=float(
+                cfg.training.get("sourcecost_weight_power", 0.0)
+            ),
+            sourcecost_weight_min=float(
+                cfg.training.get("sourcecost_weight_min", 1.0)
+            ),
+            sourcecost_weight_max=float(
+                cfg.training.get("sourcecost_weight_max", 1.0)
+            ),
         )
         total_loss += float(loss.cpu()) * len(batch)
         predicted = logits.argmax(dim=1)
@@ -296,6 +352,11 @@ def train_model(
                 cardinalities=cardinalities,
                 tokenizer=tokenizer,
                 bpe_limits=limits,
+                source_cost_log1p_scale=float(
+                    cfg.get("numeric_features", {}).get(
+                        "source_cost_log1p_scale", 1.0
+                    )
+                ),
             )
             bags = pack_bags(batch, cardinalities=cardinalities, device=device)
             optimizer.zero_grad(set_to_none=True)
@@ -312,6 +373,15 @@ def train_model(
                     batch,
                     objective=objective,
                     symmetric_weight=symmetric_weight,
+                    sourcecost_weight_power=float(
+                        cfg.training.get("sourcecost_weight_power", 0.0)
+                    ),
+                    sourcecost_weight_min=float(
+                        cfg.training.get("sourcecost_weight_min", 1.0)
+                    ),
+                    sourcecost_weight_max=float(
+                        cfg.training.get("sourcecost_weight_max", 1.0)
+                    ),
                 )
             loss.backward()
             gradient_norm = float(
@@ -431,6 +501,7 @@ def _candidate_row(columns: dict[str, list[Any]], index: int) -> tuple[dict, dic
         "query_text": "",
         "title_text": normalize(title),
         "text_text": normalize(text),
+        "source_cost": float(columns["SourceCost"][index] or 0.0),
     }
     metadata = {
         "banner_id": banner_id,
@@ -497,6 +568,11 @@ def export_candidates(
                 cardinalities=banner_cardinalities,
                 tokenizer=tokenizer,
                 bpe_limits=limits,
+                source_cost_log1p_scale=float(
+                    cfg.get("numeric_features", {}).get(
+                        "source_cost_log1p_scale", 1.0
+                    )
+                ),
             )
             bags = pack_bags(
                 rows,
