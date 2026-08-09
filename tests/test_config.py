@@ -193,6 +193,45 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(cfg.pipeline.merge_partition_workers, 2)
         self.assertEqual(cfg.pipeline.feature_partition_workers, 2)
 
+    def test_selected_feature_tower_temporal_contract_is_honest_and_bounded(self) -> None:
+        cfg = compose_config(
+            "i4_feature_tower_cross_fast_quality",
+            mode="offline",
+            overrides=[
+                "paths.selected_two_tower_walk_forward_artifact=/tmp/selected_oof"
+            ],
+        )
+        enabled = [
+            str(name)
+            for name, item in cfg.candidates.generators.items()
+            if bool(item.enabled)
+        ]
+        gpu = [
+            name
+            for name in enabled
+            if str(cfg.candidates.generators[name].get("resource", "cpu")) == "gpu"
+        ]
+        self.assertEqual(
+            gpu,
+            [
+                "two_tower_v2_walk_forward",
+                "two_tower_v3_walk_forward",
+                "selected_feature_tower_walk_forward",
+            ],
+        )
+        self.assertEqual(
+            cfg.paths.selected_two_tower_walk_forward_artifact,
+            "/tmp/selected_oof",
+        )
+        self.assertTrue(cfg.walk_forward_ranker.enabled)
+        self.assertEqual(cfg.ranker.loss_function, "QueryRMSE")
+        self.assertEqual(cfg.ranker.selection_metric, "sourcecost_recall")
+        self.assertEqual(cfg.candidates.ranker_pool, 750)
+        self.assertEqual(cfg.pipeline.max_parallel_cg, 3)
+        self.assertGreater(
+            float(cfg.promotion_gate.ranker_sourcecost_recall_at_50), 0.6531
+        )
+
     def test_walk_forward_10m_uses_only_oof_safe_learned_sources(self) -> None:
         cfg = compose_config("i2_walk_forward_10m_fast_quality", mode="offline")
         enabled = [
