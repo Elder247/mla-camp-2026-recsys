@@ -17,9 +17,29 @@ from two_tower_v2.walk_forward import (  # noqa: E402
     validate_week_sequence,
     walk_forward_events,
 )
+from scripts.train_two_tower_walk_forward import load_config  # noqa: E402
 
 
 class WalkForwardTest(unittest.TestCase):
+    def test_metadata_walk_forward_configs_match_full_quality_models(self) -> None:
+        v5 = load_config(
+            ROOT
+            / "configs"
+            / "two_tower"
+            / "v5_ad_metadata_walk_forward_100m_s10.yaml"
+        )
+        v7 = load_config(
+            ROOT
+            / "configs"
+            / "two_tower"
+            / "v7_large_batch_walk_forward_100m_s10.yaml"
+        )
+        self.assertEqual(v5.model.banner_cardinalities.banner_id_hash2_ids, 262144)
+        self.assertTrue(v5.paths.full_quality_artifact.endswith("v5_ad_metadata_chrono_100m_model"))
+        self.assertEqual(v7.training.batch_size, 4096)
+        self.assertEqual(v7.model.query_cardinalities.device_ids, 1024)
+        self.assertTrue(v7.paths.full_quality_artifact.endswith("v7_large_batch_chrono_100m_model"))
+
     def test_training_sample_is_stable_and_bounded(self) -> None:
         first = deterministic_sample("request-1", fraction=0.1, seed=2026)
         self.assertEqual(

@@ -1,0 +1,18 @@
+extends: v6_context_metadata_walk_forward_100m_s10.yaml
+
+experiment:
+  name: two_tower_v7_large_batch_walk_forward_100m_s10
+
+paths:
+  oof_requests_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_walk_forward_100m_s10/oof_requests.parquet
+  history_events_file: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_walk_forward_100m_s10/history_events.parquet
+  dataset_artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_walk_forward_100m_s10
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_walk_forward_100m_s10
+  full_quality_artifact: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v7_large_batch_chrono_100m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v7-large-batch-walk-forward-100m-s10
+
+training:
+  batch_size: 4096

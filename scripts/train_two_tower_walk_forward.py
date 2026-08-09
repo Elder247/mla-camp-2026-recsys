@@ -304,7 +304,7 @@ def main() -> int:
     validation = YtTableSource(
         str(cfg.paths.validation_table), str(cfg.paths.proxy), fields=source_fields(
             all_cardinalities(final_model_cfg)
-        )
+        ), allow_missing_fields=True
     )
     health = evaluate(
         final_model,
