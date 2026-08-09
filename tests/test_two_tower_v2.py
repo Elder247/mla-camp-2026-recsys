@@ -707,6 +707,16 @@ def test_v17_changes_only_logq_to_exact_train_scope_prior() -> None:
     assert trial.paths.logq_prior_dir.endswith(
         "logq_prior_banner_frequency_10m_v1"
     )
+    full = load_config(
+        ROOT / "configs" / "two_tower" / "v17_global_logq_chrono_100m.yaml"
+    )
+    assert full.paths.train_table.endswith("train_clicks_100m_metadata_v1")
+    assert full.training.logq_correction == trial.training.logq_correction
+    assert full.training.logq_power == trial.training.logq_power
+    assert full.model == trial.model
+    assert full.paths.logq_prior_dir.endswith(
+        "logq_prior_banner_frequency_100m_v1"
+    )
 
 
 def test_v7_uses_more_in_batch_negatives() -> None:

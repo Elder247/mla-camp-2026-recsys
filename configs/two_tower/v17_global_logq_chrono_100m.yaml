@@ -1,0 +1,18 @@
+extends: v16_multihash_piecewise_logq_half_chrono_100m.yaml
+
+experiment:
+  name: two_tower_v17_global_logq_chrono_100m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v17_global_logq_chrono_100m_model
+  logq_prior_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/logq_prior_banner_frequency_100m_v1
+
+tracking:
+  underdeep:
+    run_name: two-tower-v17-global-logq-chrono-100m
+
+training:
+  logq_correction: global_banner_frequency
+  logq_query_correction: batch_frequency
+  logq_power: 0.5
+  logq_unseen_count: 1.0

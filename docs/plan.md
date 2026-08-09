@@ -1005,3 +1005,15 @@ YT recovery, private scoring and next direct TwoTower gate (2026-08-09):
   versioned global banner sampling prior computed only from the allowed
   training scope. It starts on 10M and is promoted only on robust temporal
   Recall/SourceCost Recall and complementarity.
+- exact global banner logQ is implemented in commit `c92071d`; targeted tests
+  pass `37/37` and the complete suite passes `191/191`. The versioned 10M
+  prior contains exact counts for `940,982` banners across all `2,180,453`
+  permitted train rows, has a manifest and SHA-256, and was built in `19.2s`;
+- v17 trained on 10M in `289.8s` at `7,524 rows/s`; all train banner ids were
+  covered by the prior (the reported 2,000 misses are validation-only unseen
+  ids). Against the otherwise identical v16 control, Recall/SC@50 improved
+  from `0.451871/0.551047` to `0.502999/0.597363`, while Recall/SC@500 improved
+  from `0.610397/0.694836` to `0.622965/0.700771`. Mean top-50 Jaccard is
+  `0.293`; v17 adds 61 unique hits versus 34 in the reverse direction;
+- v17 therefore passes the 10M retrieval gate by a wide margin. One matching
+  100M prior and fit are promoted; no other heavy model runs in parallel.
