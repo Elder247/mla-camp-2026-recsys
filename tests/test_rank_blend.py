@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from mla_recsys.rank_blend import rank_linear_order, rank_value_geometric_order
+from mla_recsys.rank_blend import (
+    rank_linear_order,
+    rank_value_geometric_order,
+    two_model_rank_linear_order,
+)
 
 
 def test_rank_linear_order_combines_catboost_and_pre_rank() -> None:
@@ -32,6 +36,22 @@ def test_rank_linear_order_combines_catboost_and_pre_rank() -> None:
 def test_rank_linear_order_rejects_invalid_weight() -> None:
     with pytest.raises(ValueError, match="catboost_weight"):
         rank_linear_order([], catboost_weight=1.1)
+
+
+def test_two_model_rank_linear_order_blends_models_and_rrf() -> None:
+    values = [
+        (3.0, 1.0, 2, 10, 1, 10.0),
+        (2.0, 3.0, 1, 20, 1, 20.0),
+        (1.0, 2.0, 3, 30, 1, 30.0),
+    ]
+
+    ordered = two_model_rank_linear_order(
+        values,
+        model_a_weight=0.5,
+        catboost_weight=0.5,
+    )
+
+    assert [value[3] for value in ordered] == [20, 10, 30]
 
 
 def test_value_geometry_zero_exponent_matches_base_blend() -> None:

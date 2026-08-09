@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 RankedCandidate = tuple[float, int, int, int]
 ValueRankedCandidate = tuple[float, int, int, int, float]
+TwoModelValueCandidate = tuple[float, float, int, int, int, float]
 
 
 def rank_linear_order(
@@ -30,6 +31,38 @@ def rank_linear_order(
     ]
     weighted.sort(key=lambda item: (item[0], item[1], item[2]))
     return [item[3] for item in weighted]
+
+
+def two_model_rank_linear_order(
+    values: Iterable[TwoModelValueCandidate],
+    *,
+    model_a_weight: float,
+    catboost_weight: float,
+) -> list[TwoModelValueCandidate]:
+    """Blend two CatBoost ranks, then blend the ensemble rank with RRF."""
+
+    if not 0.0 <= model_a_weight <= 1.0:
+        raise ValueError("model_a_weight must be in [0, 1]")
+    if not 0.0 <= catboost_weight <= 1.0:
+        raise ValueError("catboost_weight must be in [0, 1]")
+    rows = list(values)
+    model_a = sorted(rows, key=lambda value: (-value[0], value[2], value[3]))
+    model_b = sorted(rows, key=lambda value: (-value[1], value[2], value[3]))
+    rank_a = {(value[3], value[4]): rank for rank, value in enumerate(model_a, 1)}
+    rank_b = {(value[3], value[4]): rank for rank, value in enumerate(model_b, 1)}
+    return sorted(
+        rows,
+        key=lambda value: (
+            catboost_weight
+            * (
+                model_a_weight * rank_a[(value[3], value[4])]
+                + (1.0 - model_a_weight) * rank_b[(value[3], value[4])]
+            )
+            + (1.0 - catboost_weight) * value[2],
+            value[2],
+            value[3],
+        ),
+    )
 
 
 def rank_value_geometric_order(

@@ -474,3 +474,19 @@ Mean-SourceCost 10M gate (`20260809_0530_i2_mean10m_temporal`):
   fastest non-redundant test moves to the already cached 100M features and
   compares QueryRMSE on raw SourceCost against the accepted log-SourceCost
   model. This is a ranker-only probe: no candidates or features are rebuilt.
+
+100M ranker-only target/depth/ensemble decision:
+
+- `20260809_0545_i2_rawqrmse_rankonly` reused 919 immutable files (2.08 GB
+  logical), trained in `41s` and selected 57 trees. Raw-SourceCost QueryRMSE
+  peaks at only `0.634536` after score blending, so the raw target is rejected;
+- log-QueryRMSE depth 10 and 6 peak after geometry at `0.645358` and
+  `0.647200`; both are below depth 8 `0.649637`, confirming depth 8;
+- a bounded 40-combination rank ensemble of the accepted depth-8 QueryRMSE and
+  YetiRank models completed in `36.6s`. Equal model ranks blended equally with
+  RRF, followed by exponent `0.2` inside top 75, reaches a new honest best
+  SC Recall@50 `0.650073` (Recall@50 `0.541560`);
+- a narrower refinement reproduced the same exact optimum. The gain over the
+  single model is small (`+0.044 pp`) but stable; because a full cached run is
+  only minutes, it is promoted as a low-cost private check rather than claimed
+  as a structural improvement.

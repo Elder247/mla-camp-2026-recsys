@@ -278,3 +278,22 @@ nohup env -u PYTHONPATH PYTHONUNBUFFERED=1 \
 The 1M setting is only a schema/code smoke. Hypotheses are accepted on the 10M
 temporal holdout by candidate complementarity, candidate SC Recall@500 and the
 best RRF/CatBoost blend SC Recall@50; only a winner advances to 100M.
+
+For a promoted two-model rank ensemble, the full run trains the second model
+from reused immutable features and declares the first model plus every weight
+in config overrides:
+
+```bash
+python scripts/run_pipeline.py \
+  experiment=i2_walk_forward_100m_s10_fast_quality run_id=<ensemble-full> \
+  mode=full scope=full \
+  submission.ranking=model_ensemble \
+  submission.model_ensemble.model_a_path=<first-full-run>/models/catboost.cbm \
+  submission.model_ensemble.model_a_weight=0.5 \
+  submission.model_ensemble.catboost_weight=0.5 \
+  submission.value_geometry.exponent=0.2 \
+  submission.value_geometry.rerank_top_n=75
+```
+
+The ensemble stage fails closed when ordered feature names differ and its
+submission manifest fingerprints both model artifacts.

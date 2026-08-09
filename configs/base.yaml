@@ -105,3 +105,8 @@ submission:
     source_cost_scale: 1000000.0
     exponent: 0.0
     rerank_top_n: 100
+  model_ensemble:
+    method: rank_linear
+    model_a_path: null
+    model_a_weight: 0.5
+    catboost_weight: 0.5

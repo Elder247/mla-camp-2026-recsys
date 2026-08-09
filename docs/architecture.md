@@ -145,6 +145,13 @@ CatBoost `PredictionValuesChange` importance report. SHAP and permutation
 importance are deliberately disabled to keep the production run simple and
 avoid a second groupwise analysis pass.
 
+A promoted two-model ensemble remains a rank-level postprocessor, not a new
+training architecture. Both CatBoost models must expose the identical ordered
+feature contract. Their within-request ranks are averaged with a configured
+weight, the result is blended with the frozen RRF rank, and the already bounded
+SourceCost geometry may rerank only the configured prefix. Model paths and all
+three weights are part of the resolved full-run config and output manifest.
+
 ## Memory and execution
 
 `scripts/run_pipeline.py` is a standard-library orchestrator. It launches each
