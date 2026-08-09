@@ -705,3 +705,46 @@ Feature-rich TwoTower screen (2026-08-09):
   leakage-safe predict-before-update OOF, cached three-tower temporal CatBoost,
   promotion gate, and full only on an honest improvement. No two GPU training
   stages overlap.
+
+TwoTower v7 100M, OOF and private ensemble evidence (2026-08-09):
+
+- v7 processed `21,813,184` chronological examples in `2391.7s` at about
+  `9.12k rows/s`; one-million-banner export took another `86.5s`. The final
+  validation in-batch accuracy was `0.8075`;
+- the honest 100M retrieval probe reached SC Recall@50/500
+  `0.627165/0.729225` and Recall@50 `0.533847`, versus v3
+  `0.556319/0.716480` and `0.493288`. The oracle-union SC Recall@50 was
+  `0.646987`, confirming that v7 is both stronger and still complementary;
+- standalone v7 full-fit submissions scored only `0.58851-0.59999` privately,
+  so direct retrieval is not the final ranking. A cached three-pool RRF of the
+  old full ranking, chronological full ranking and v7 candidates improved the
+  private best to SC Recall@50 `0.649876`, Recall@50 `0.5340`. The accepted
+  robust parameters are weights `0.10/0.30/0.60`, RRF constant `10`, and
+  SourceCost exponent `0.1` inside top `75`;
+- leakage-safe weekly predict-before-update generation completed all `8/8`
+  v7 snapshots in `1652.7s`. Each target week is predicted before its labels
+  are attached and before the next update, so CatBoost never sees
+  target-dependent positive injection.
+
+Selected-tower CatBoost temporal and cached ensemble gate (2026-08-09):
+
+- `20260809_1455_i4_feature_temporal` completed in `2151.9s`; parity passed
+  `40/40` with zero mismatches. It produced 172-column leakage-safe features,
+  trained one 400-tree QueryRMSE CatBoost in `54.1s`, and saved default
+  PredictionValuesChange importance;
+- selected v7 OOF candidates reached SC Recall@50/500
+  `0.594602/0.725935`. The merged natural pool reached SC Recall@500
+  `0.724841`; CatBoost, fixed blend and RRF reached SC Recall@50
+  `0.648592/0.651454/0.640953`. The standalone promotion threshold
+  `0.6531475` was not passed, so the original supervisor correctly did not
+  launch full;
+- a cached four-pool probe then showed that the new CatBoost ranking is useful
+  as a complementary source. The refined stable three-useful-pool mixture
+  (chronological ranking / v7 candidates / new CatBoost blend) uses weights
+  `0.15/0.55/0.30`, RRF constant `5`, and no value-geometry reorder. Its early,
+  late and full temporal SC Recall@50 are `0.680696/0.664263/0.673145`, with
+  full Recall@50 `0.575835`;
+- this cross-pool evidence justifies one bounded full materialization,
+  `20260809_1610_i4_feature_full`, launched detached with the temporal-selected
+  `366` CatBoost iterations. The full output will be accepted only after the
+  strict 10,000-request submission contract and an autonomous private check.
