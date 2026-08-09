@@ -7,6 +7,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from mla_recsys.counters import COUNTER_EVENT_SCHEMA, stable_text_key
+from mla_recsys.candidate_cache import candidate_row
 from mla_recsys.data import write_request_parquet
 from mla_recsys.temporal_candidates import TemporalHistoryState, temporal_rankings
 
@@ -232,3 +233,38 @@ def test_incremental_temporal_topk_matches_full_sort() -> None:
     assert [item["banner_id"] for item in state.rank(probe, top_k=4)] == (
         brute_force_ids(state, probe, top_k=4)
     )
+
+
+def test_recency_mode_prefers_newer_banner_over_higher_source_cost() -> None:
+    state = TemporalHistoryState(
+        "history_query_recent_v1",
+        min_clicks=1,
+        bayes_prior=0.0,
+        score_mode="recency",
+    )
+    old_expensive = request("1", 100, 100)
+    old_expensive["clicked_source_costs"] = [1000.0]
+    new_cheap = request("2", 200, 200)
+    new_cheap["clicked_source_costs"] = [1.0]
+    state.observe(old_expensive)
+    state.observe(new_cheap)
+
+    ranked = state.rank(request("3", 300, 300), top_k=2)
+
+    assert [row["banner_id"] for row in ranked] == [200, 100]
+
+
+def test_query_history_uses_canonical_candidate_provenance() -> None:
+    state = TemporalHistoryState(
+        "history_query_sc_oof_v1",
+        min_clicks=1,
+        bayes_prior=0.0,
+    )
+    state.observe(request("1", 100, 10))
+    probe = request("2", 200, 20)
+
+    raw = state.rank(probe, top_k=1)[0]
+    row = candidate_row(probe, raw, source_rank=1)
+
+    assert row["history_query_present"] is True
+    assert row["history_region_present"] is False

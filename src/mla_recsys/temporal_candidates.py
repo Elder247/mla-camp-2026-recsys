@@ -23,7 +23,11 @@ TEMPORAL_SOURCES = {
     "global_pop_sc_v1": "global",
     "history_query_sc_oof_v1": "query_sc",
     "history_query_region_oof_v1": "query_region_sc",
+    "history_query_recent_v1": "query_sc",
+    "history_query_region_recent_v1": "query_region_sc",
 }
+
+SCORE_MODES = {"auto", "source_cost", "recency", "clicks"}
 
 
 @dataclass
@@ -40,6 +44,7 @@ class TemporalHistoryState:
         *,
         min_clicks: int,
         bayes_prior: float,
+        score_mode: str = "auto",
         valid_banner_ids: set[int] | None = None,
     ) -> None:
         if source not in TEMPORAL_SOURCES:
@@ -48,6 +53,12 @@ class TemporalHistoryState:
         self.family = TEMPORAL_SOURCES[source]
         self.min_clicks = int(min_clicks)
         self.bayes_prior = float(bayes_prior)
+        self.score_mode = str(score_mode)
+        if self.score_mode not in SCORE_MODES:
+            raise ValueError(
+                f"Unsupported temporal score_mode={self.score_mode!r}; "
+                f"expected one of {sorted(SCORE_MODES)}"
+            )
         self.valid_banner_ids = valid_banner_ids
         self.stats: dict[str, dict[int, BannerStats]] = defaultdict(dict)
         self.dirty: dict[str, set[int]] = defaultdict(set)
@@ -95,6 +106,12 @@ class TemporalHistoryState:
             self.dirty[key].add(normalized_banner_id)
 
     def _score(self, item: BannerStats) -> float:
+        if self.score_mode == "recency":
+            return float(item.last_show_time)
+        if self.score_mode == "clicks":
+            return float(item.clicks)
+        if self.score_mode == "source_cost":
+            return item.source_cost_sum
         if self.family in {"user", "query_sc", "query_region_sc"}:
             return item.source_cost_sum
         support = item.clicks / (item.clicks + self.bayes_prior)
@@ -126,13 +143,17 @@ class TemporalHistoryState:
         )
         self.dirty[key].clear()
         result = []
+        provenance_family = {
+            "query_sc": "query",
+            "query_region_sc": "query_region",
+        }.get(self.family, self.family)
         for score, _, _, banner_id, item in ranked[:top_k]:
             result.append(
                 {
                     "banner_id": int(banner_id),
                     "score": float(score),
                     "contributions": {
-                        "history": {self.family: {}},
+                        "history": {provenance_family: {}},
                         "click_count": item.clicks,
                         "source_cost_sum": item.source_cost_sum,
                         "last_show_time": item.last_show_time,
@@ -183,6 +204,7 @@ def _new_state(cfg: DictConfig, source: str) -> TemporalHistoryState:
         source,
         min_clicks=int(item.get("min_clicks", default_min_clicks)),
         bayes_prior=float(item.get("bayes_prior", 0.0)),
+        score_mode=str(item.get("score_mode", "auto")),
         valid_banner_ids=valid_banner_ids,
     )
 

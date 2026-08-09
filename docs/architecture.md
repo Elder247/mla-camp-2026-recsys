@@ -99,6 +99,14 @@ independent sources: query ordered by clicks, query ordered by direct
 SourceCost, and exact query-region ordered by direct SourceCost. Query-region
 has no implicit query-only fallback, so its complementarity is measurable.
 
+Temporal query and exact query-region history also support independent
+recency-ranked variants. They use the same strictly-past state and candidate
+universe as the SourceCost variants, but order banners by the last event time.
+The score policy is an explicit `score_mode` in experiment config; adding a
+variant therefore cannot silently change an existing generator. Both variants
+are disabled by default and must pass the 10M complementarity/SC gate before a
+100M confirmation.
+
 User, region and global sources are native run-scoped generators. For `train`
 and `full_train`, they rank from state observed at strictly earlier timestamps;
 all requests sharing a timestamp are ranked before that timestamp is observed.
@@ -240,8 +248,10 @@ fits CatBoost exactly once from its natural 500-candidate pools. Full remains a
 distinct post-selection fit, not a second fit inside temporal validation.
 
 The 10M config retains TF-IDF, weekly TwoTower, past-only query/query-region,
-user and global generators. Existing honest feature importance keeps only
-query and region counter families; native static/retrieval/text features
-remain. Counter lookup streams parquet and materializes only configured
-families. Merge uses compact Arrow dictionaries and partition workers; neither
+user and global generators. Optional query/query-region recency variants are
+the current fast candidate-development gate. Existing honest feature
+importance keeps only query and region counter families; native
+static/retrieval/text features remain. Counter lookup streams parquet and
+materializes only configured families. Merge uses compact Arrow dictionaries
+and partition workers; neither
 optimization introduces target-dependent candidate injection.

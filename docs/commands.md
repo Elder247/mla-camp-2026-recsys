@@ -250,3 +250,31 @@ use `--profile history_features`, set `features.reuse_history_patch=true`, and
 then launch the same resolved full config. This profile reuses data, counters
 and individual source candidates, but deliberately does not reuse merged or
 feature parquet.
+
+## 10M recency-history gate
+
+New candidate/feature hypotheses are first evaluated with the completed 10M
+walk-forward artifact. The old 10M run can donate unchanged TF-IDF/TwoTower
+outputs, while temporal sources and downstream artifacts are regenerated:
+
+```bash
+nohup env -u PYTHONPATH PYTHONUNBUFFERED=1 \
+  /home/astrofimuk/workspace/step2_ce/.venv/bin/python scripts/run_pipeline.py \
+  experiment=i2_walk_forward_10m_fast_quality \
+  run_id=<recent-10m-temporal-id> mode=offline scope=offline \
+  paths.root=/home/astrofimuk/workspace/mla_two_stage_accel \
+  paths.runs=/home/astrofimuk/workspace/mla_two_stage/runs \
+  paths.cache=/home/astrofimuk/workspace/mla_two_stage/cache \
+  paths.immutable_artifacts=/home/astrofimuk/workspace/mla_two_stage/artifacts \
+  candidates.reuse_run=/home/astrofimuk/workspace/mla_two_stage/runs/20260808_1830_i2_wf10m_temporal \
+  candidates.generators.history_query_recent_v1.enabled=true \
+  candidates.generators.history_query_region_recent_v1.enabled=true \
+  candidates.union_max_candidates=600 candidates.ranker_pool=600 \
+  ranker.kind=ranker_logsc ranker.loss_function=QueryRMSE \
+  ranker.version=catboost_queryrmse_recent10m_v1 ranker.iterations=400 \
+  > /tmp/<recent-10m-temporal-id>.log 2>&1 < /dev/null &
+```
+
+The 1M setting is only a schema/code smoke. Hypotheses are accepted on the 10M
+temporal holdout by candidate complementarity, candidate SC Recall@500 and the
+best RRF/CatBoost blend SC Recall@50; only a winner advances to 100M.

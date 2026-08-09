@@ -426,3 +426,18 @@ Fast QueryRMSE full/private evidence (`20260809_0450_i2_qrmse_full`):
 - leaderboard upload `wf100m qrmse history geometry` at `04:57:58 MSK` scored
   SC Recall@50 `0.6206`, Recall@50 `0.5079` and Recall@10 `0.3647`. It is the
   new accepted personal best (`+0.22 pp` SC over `0.6184`).
+
+Recency-history 10M gate (in progress):
+
+- 1M remains a code/schema smoke; the first metric-bearing experiment uses
+  the existing 10M walk-forward OOF artifact and reuses unchanged TF-IDF and
+  TwoTower candidates from `20260808_1830_i2_wf10m_temporal`;
+- two config-gated generators rank strictly prior query and exact query-region
+  clicks by last event time. Existing SourceCost generators keep their old
+  ordering, and all temporal generators now emit canonical history provenance
+  so the corresponding CatBoost flags are populated;
+- the temporal experiment uses a bounded 600-row pool and the accepted
+  QueryRMSE loss. Promotion requires an improvement over the matched 10M
+  candidate ceiling `0.694238` and best blend SC Recall@50 `0.617587`, plus
+  positive source complementarity; only then is the hypothesis repeated on
+  100M/full data.

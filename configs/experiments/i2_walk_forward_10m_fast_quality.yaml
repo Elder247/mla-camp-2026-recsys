@@ -78,6 +78,28 @@ candidates:
       min_clicks: 1
       bayes_prior: 0.0
       external_events_path_key: two_tower_v2_walk_forward_history_events
+    history_query_recent_v1:
+      enabled: false
+      kind: temporal_history
+      feature_name: history_query_recent
+      quota: 100
+      top_k: 100
+      weight: 1.0
+      min_clicks: 1
+      bayes_prior: 0.0
+      score_mode: recency
+      external_events_path_key: two_tower_v2_walk_forward_history_events
+    history_query_region_recent_v1:
+      enabled: false
+      kind: temporal_history
+      feature_name: history_query_region_recent
+      quota: 75
+      top_k: 75
+      weight: 0.5
+      min_clicks: 1
+      bayes_prior: 0.0
+      score_mode: recency
+      external_events_path_key: two_tower_v2_walk_forward_history_events
     history_user_v1:
       enabled: true
       kind: temporal_history
