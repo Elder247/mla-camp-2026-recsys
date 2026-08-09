@@ -50,6 +50,34 @@ def test_feature_change_rejects_upstream_reuse() -> None:
     assert ranker_probe_semantics(donor) != ranker_probe_semantics(probe)
 
 
+def test_disabled_candidate_declarations_do_not_change_upstream_semantics() -> None:
+    donor = config(loss="YetiRankPairwise")
+    probe = config(loss="QueryRMSE")
+    donor.candidates.generators = {
+        "active": {"enabled": True, "quota": 100},
+    }
+    probe.candidates.generators = {
+        "active": {"enabled": True, "quota": 100},
+        "future_probe": {"enabled": False, "quota": 50},
+    }
+
+    assert ranker_probe_semantics(donor) == ranker_probe_semantics(probe)
+
+
+def test_enabled_candidate_change_still_rejects_upstream_reuse() -> None:
+    donor = config(loss="YetiRankPairwise")
+    probe = config(loss="QueryRMSE")
+    donor.candidates.generators = {
+        "active": {"enabled": True, "quota": 100},
+    }
+    probe.candidates.generators = {
+        "active": {"enabled": True, "quota": 100},
+        "new_active": {"enabled": True, "quota": 50},
+    }
+
+    assert ranker_probe_semantics(donor) != ranker_probe_semantics(probe)
+
+
 def test_materialize_tree_preserves_files_without_overwrite(tmp_path: Path) -> None:
     source = tmp_path / "source"
     target = tmp_path / "target"

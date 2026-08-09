@@ -457,3 +457,20 @@ Recency-history 10M gate (`20260809_0515_i2_recent10m_temporal`):
 - the cached blend/geometry probes peak at SC Recall@50
   `0.611230/0.613980`, below the old 10M blend `0.617587`. Recency is rejected
   and is not promoted to 100M; the next 10M run tests mean SourceCost per click.
+
+Mean-SourceCost 10M gate (`20260809_0530_i2_mean10m_temporal`):
+
+- the run completed in `11m09s`; TF-IDF reused in `13/14s` and TwoTower in
+  `1.6/1.7s`. Parity passed `40/40` with zero mismatches, features contain
+  `7,499,400/2,100,000` train/holdout rows, and the single QueryRMSE fit took
+  `41s`;
+- mean query/query-region SC Recall@50 is `0.418495/0.196648`, again below the
+  summed variants `0.441894/0.197284`. The merged SC Recall@500 is exactly the
+  matched baseline `0.694238`, so the candidate ceiling did not improve;
+- cached blend/geometry peak at `0.616202/0.617111`, slightly below the old
+  10M `0.617587`. Mean history is rejected and no redundant 100M candidate
+  build is launched;
+- both added history variants changed ordering but not membership. The next
+  fastest non-redundant test moves to the already cached 100M features and
+  compares QueryRMSE on raw SourceCost against the accepted log-SourceCost
+  model. This is a ranker-only probe: no candidates or features are rebuilt.

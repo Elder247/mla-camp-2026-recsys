@@ -34,6 +34,12 @@ def ranker_probe_semantics(cfg: object) -> dict:
     value.pop("promotion_gate", None)
     candidates = dict(value.get("candidates") or {})
     candidates.pop("reuse_run", None)
+    generators = dict(candidates.get("generators") or {})
+    candidates["generators"] = {
+        name: item
+        for name, item in generators.items()
+        if bool((item or {}).get("enabled", False))
+    }
     value["candidates"] = candidates
     features = dict(value.get("features") or {})
     features.pop("reuse_run", None)

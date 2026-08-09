@@ -40,4 +40,6 @@ These invariants are review blockers.
     scopes cannot emit an item that submission cannot resolve.
 16. Cross-run stage materialization requires a completed donor, green parity
     and an exact upstream semantic-config match. Ranker-only reuse must not
-    silently carry merged/features across a changed history contract.
+    silently carry merged/features across a changed history contract. Disabled
+    candidate declarations are not upstream semantics and may be ignored;
+    enabling or changing any active generator still invalidates reuse.
