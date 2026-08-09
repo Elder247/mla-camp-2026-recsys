@@ -35,6 +35,78 @@ def matrix(table: pa.Table, names: list[str]) -> np.ndarray:
     ).astype(np.float32, copy=False)
 
 
+def sourcecost_recall_at_k(
+    table: pa.Table,
+    scores: np.ndarray,
+    *,
+    k: int,
+) -> float:
+    """Evaluate ranking scores on the cached natural candidate pool."""
+    if table.num_rows != len(scores):
+        raise ValueError("Prediction and validation row counts differ")
+    if k <= 0:
+        raise ValueError("SourceCost cutoff must be positive")
+    group_ids = table["group_id"].combine_chunks().to_numpy(zero_copy_only=False)
+    source_cost = table["label_raw_sc"].combine_chunks().to_numpy(
+        zero_copy_only=False
+    )
+    pre_rank = table["pre_rank"].combine_chunks().to_numpy(zero_copy_only=False)
+    banner_id = table["banner_id"].combine_chunks().to_numpy(zero_copy_only=False)
+    starts = np.r_[0, np.flatnonzero(group_ids[1:] != group_ids[:-1]) + 1]
+    if np.unique(group_ids[starts]).size != starts.size:
+        raise ValueError("Ranking groups must be contiguous for staged selection")
+    total = float(source_cost.sum())
+    if total <= 0.0:
+        raise ValueError("Validation pool has no positive SourceCost")
+    hit = 0.0
+    ends = np.r_[starts[1:], table.num_rows]
+    for start, end in zip(starts, ends):
+        order = np.lexsort(
+            (
+                banner_id[start:end],
+                pre_rank[start:end],
+                -np.asarray(scores[start:end], dtype=np.float64),
+            )
+        )
+        hit += float(source_cost[start:end][order[:k]].sum())
+    return hit / total
+
+
+def select_trees_by_sourcecost(
+    model: object,
+    eval_pool: object,
+    validation: pa.Table,
+    *,
+    period: int,
+    k: int,
+) -> dict[str, object]:
+    if period <= 0:
+        raise ValueError("ranker.selection_eval_period must be positive")
+    values = []
+    tree_count = int(model.tree_count_)
+    for index, predictions in enumerate(
+        model.staged_predict(eval_pool, eval_period=period)
+    ):
+        trees = min((index + 1) * period, tree_count)
+        metric = sourcecost_recall_at_k(
+            validation,
+            np.asarray(predictions, dtype=np.float64),
+            k=k,
+        )
+        values.append({"trees": trees, "sourcecost_recall": metric})
+    if not values:
+        raise RuntimeError("CatBoost staged prediction returned no checkpoints")
+    best = max(values, key=lambda row: (row["sourcecost_recall"], -row["trees"]))
+    model.shrink(ntree_end=int(best["trees"]))
+    return {
+        "metric": f"sourcecost_recall@{k}",
+        "eval_period": period,
+        "best_trees": int(best["trees"]),
+        "best_value": float(best["sourcecost_recall"]),
+        "checkpoints": values,
+    }
+
+
 def positive_groups_only(table: pa.Table) -> pa.Table:
     return table.filter(pc.equal(table["group_has_positive"], True))
 
@@ -189,11 +261,20 @@ def main() -> int:
     names = configured_feature_names(cfg)
     label_column, label_scale = label_spec(cfg)
     training_window_enabled = float(cfg.ranker.get("training_window_days", 0.0)) > 0.0
+    selection_metric = str(cfg.ranker.get("selection_metric", "catboost_eval"))
+    sourcecost_selection = selection_metric == "sourcecost_recall_at_50"
+    if selection_metric not in {"catboost_eval", "sourcecost_recall_at_50"}:
+        raise ValueError(f"Unsupported ranker.selection_metric: {selection_metric}")
     needed = list(
         dict.fromkeys(
             [
                 "group_id",
                 "group_has_positive",
+                *(
+                    ["pre_rank", "banner_id"]
+                    if sourcecost_selection
+                    else []
+                ),
                 label_column,
                 "label_raw_sc",
                 *(["request_id"] if training_window_enabled else []),
@@ -261,12 +342,26 @@ def main() -> int:
     )
     fit_kwargs = {}
     if eval_pool is not None:
-        fit_kwargs.update(
-            eval_set=eval_pool,
-            early_stopping_rounds=int(cfg.ranker.early_stopping_rounds),
-            use_best_model=True,
-        )
+        fit_kwargs["eval_set"] = eval_pool
+        if sourcecost_selection:
+            fit_kwargs["use_best_model"] = False
+        else:
+            fit_kwargs.update(
+                early_stopping_rounds=int(cfg.ranker.early_stopping_rounds),
+                use_best_model=True,
+            )
     model.fit(train_pool, **fit_kwargs)
+    staged_selection = None
+    if sourcecost_selection:
+        if eval_pool is None:
+            raise ValueError("SourceCost tree selection requires a validation pool")
+        staged_selection = select_trees_by_sourcecost(
+            model,
+            eval_pool,
+            validation,
+            period=int(cfg.ranker.get("selection_eval_period", 25)),
+            k=50,
+        )
 
     model_dir = context.store.path / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -285,6 +380,8 @@ def main() -> int:
         "validation_rows_fit": validation_rows,
         "best_iteration": model.get_best_iteration(),
         "best_score": model.get_best_score(),
+        "selection": staged_selection
+        or {"metric": "catboost_eval", "best_iteration": model.get_best_iteration()},
         "label_column": label_column,
         "label_scale": label_scale,
         "training_window": train_window_stats,

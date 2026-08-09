@@ -75,6 +75,11 @@ ranker:
   learning_rate: 0.07
   l2_leaf_reg: 5.0
   early_stopping_rounds: 75
+  # catboost_eval preserves the standard NDCG early-stop contract. The
+  # SourceCost option fits once, evaluates staged trees on temporal holdout,
+  # and shrinks to the checkpoint that maximizes the competition metric.
+  selection_metric: catboost_eval
+  selection_eval_period: 25
   random_seed: ${project.seed}
   # Zero keeps the complete leakage-safe OOF train. Positive values retain
   # whole request groups from only the most recent N days before the fit end.

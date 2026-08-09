@@ -5,7 +5,13 @@ import pyarrow as pa
 import pytest
 from omegaconf import OmegaConf
 
-from scripts.train_ranker import filter_training_window, group_weight_array, label_spec
+from scripts.train_ranker import (
+    filter_training_window,
+    group_weight_array,
+    label_spec,
+    select_trees_by_sourcecost,
+    sourcecost_recall_at_k,
+)
 
 
 def test_raw_sourcecost_label_is_not_log_surrogate() -> None:
@@ -119,3 +125,53 @@ def test_negative_training_window_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="non-negative"):
         filter_training_window(pa.table({"group_id": [1]}), pa.table({}), cfg)
+
+
+def staged_validation_table() -> pa.Table:
+    return pa.table(
+        {
+            "group_id": [10, 10, 10, 20, 20],
+            "label_raw_sc": [100.0, 0.0, 0.0, 200.0, 0.0],
+            "pre_rank": [1, 2, 3, 1, 2],
+            "banner_id": [101, 102, 103, 201, 202],
+        }
+    )
+
+
+def test_sourcecost_recall_uses_top_k_inside_each_group() -> None:
+    scores = np.array([0.1, 0.9, 0.8, 0.5, 0.4])
+
+    metric = sourcecost_recall_at_k(staged_validation_table(), scores, k=1)
+
+    assert metric == pytest.approx(2.0 / 3.0)
+
+
+def test_staged_selection_shrinks_to_best_sourcecost_checkpoint() -> None:
+    class FakeModel:
+        tree_count_ = 50
+
+        def __init__(self) -> None:
+            self.shrunk_to = None
+
+        def staged_predict(self, pool: object, eval_period: int):
+            assert pool == "pool"
+            assert eval_period == 25
+            yield np.array([0.1, 0.9, 0.8, 0.5, 0.4])
+            yield np.array([0.9, 0.1, 0.2, 0.5, 0.4])
+
+        def shrink(self, *, ntree_end: int) -> None:
+            self.shrunk_to = ntree_end
+
+    model = FakeModel()
+
+    report = select_trees_by_sourcecost(
+        model,
+        "pool",
+        staged_validation_table(),
+        period=25,
+        k=1,
+    )
+
+    assert model.shrunk_to == 50
+    assert report["best_trees"] == 50
+    assert report["best_value"] == pytest.approx(1.0)
