@@ -936,3 +936,10 @@ Fast logQ context screens and bounded ensemble (2026-08-09):
   `e2fa9f5792470bad481707b15112a54ae9c8c0fe7760e663f3a3123a740a058f`
   and it supersedes the v3-only file as the first candidate to score when YT
   recovers.
+- adding `5%` of the v4 SourceCost-weighted tower to four fixed neighbours
+  hurt the late split, so v4 is not retained. A final fixed-weight geometry
+  check kept RRF `0`: exponent `0.05` is the robust choice above, while the
+  single late-heavy neighbour at exponent `0.10` has early/late/full gains
+  `+0.000720/+0.006434/+0.003346`. Its strict output SHA-256 is
+  `3af73e81115d95e9f95c86e0506dc8cebd4a7b2675710889cb5bd43c9f3a7378`;
+  these are the only two geometry variants queued for private evaluation.
