@@ -546,6 +546,20 @@ def test_v15_combines_only_temporally_accepted_logq_screens() -> None:
     assert combined.model.banner_cardinalities.banner_id_hash2_ids == 1_048_576
     assert "income_ids" not in combined.model.query_cardinalities
 
+    full = load_config(
+        ROOT
+        / "configs"
+        / "two_tower"
+        / "v15_combined_logq_half_chrono_100m.yaml"
+    )
+    assert full.paths.train_table.endswith("train_clicks_100m_metadata_v1")
+    assert full.training.prefetch_batches == 2
+    assert full.training.logq_power == 0.5
+    assert full.model.hidden_dim == combined.model.hidden_dim
+    assert full.model.output_dim == combined.model.output_dim
+    assert full.model.query_cardinalities == combined.model.query_cardinalities
+    assert full.model.banner_cardinalities.banner_id_hash2_ids == 1_048_576
+
 
 def test_v7_uses_more_in_batch_negatives() -> None:
     cfg = load_config(

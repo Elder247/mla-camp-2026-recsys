@@ -1,0 +1,24 @@
+extends: v8_logq_half_chrono_100m.yaml
+
+experiment:
+  name: two_tower_v15_combined_logq_half_chrono_100m
+
+paths:
+  artifact_dir: /home/astrofimuk/workspace/mla_two_stage/artifacts/two_tower_v15_combined_logq_half_chrono_100m_model
+
+tracking:
+  underdeep:
+    run_name: two-tower-v15-combined-logq-half-chrono-100m
+
+training:
+  # Hide YT latency behind GPU work while preserving chronological row order.
+  prefetch_batches: 2
+
+model:
+  hidden_dim: 512
+  output_dim: 128
+  query_cardinalities:
+    crypta_id_hash1_ids: 1048576
+    crypta_id_hash2_ids: 1048576
+  banner_cardinalities:
+    banner_id_hash2_ids: 1048576
