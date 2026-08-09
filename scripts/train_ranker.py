@@ -107,6 +107,40 @@ def select_trees_by_sourcecost(
     }
 
 
+def resolve_tree_selection(
+    selection_metric: str,
+    *,
+    validation_split: str | None,
+    iterations: int,
+) -> tuple[bool, dict[str, object] | None]:
+    """Select trees on temporal validation or preserve its fixed full-fit count.
+
+    Full scope deliberately has no validation pool. Its configured iteration
+    count is supplied by the preceding temporal run, so trying to repeat the
+    SourceCost checkpoint search there is both impossible and unnecessary.
+    """
+    supported = {
+        "catboost_eval",
+        "sourcecost_recall",
+        "sourcecost_recall_at_50",
+    }
+    if selection_metric not in supported:
+        raise ValueError(f"Unsupported ranker.selection_metric: {selection_metric}")
+    requested = selection_metric in {
+        "sourcecost_recall",
+        "sourcecost_recall_at_50",
+    }
+    if requested and validation_split is None:
+        if iterations <= 0:
+            raise ValueError("ranker.iterations must be positive")
+        return False, {
+            "metric": "fixed_iterations_from_temporal_sourcecost_selection",
+            "requested_metric": selection_metric,
+            "best_trees": int(iterations),
+        }
+    return requested, None
+
+
 def positive_groups_only(table: pa.Table) -> pa.Table:
     return table.filter(pc.equal(table["group_has_positive"], True))
 
@@ -262,16 +296,16 @@ def main() -> int:
     label_column, label_scale = label_spec(cfg)
     training_window_enabled = float(cfg.ranker.get("training_window_days", 0.0)) > 0.0
     selection_metric = str(cfg.ranker.get("selection_metric", "catboost_eval"))
-    sourcecost_selection = selection_metric in {
-        "sourcecost_recall",
-        "sourcecost_recall_at_50",
-    }
-    if selection_metric not in {
-        "catboost_eval",
-        "sourcecost_recall",
-        "sourcecost_recall_at_50",
-    }:
-        raise ValueError(f"Unsupported ranker.selection_metric: {selection_metric}")
+    configured_iterations = (
+        int(cfg.ranker.smoke_iterations)
+        if str(cfg.runtime.mode) == "smoke"
+        else int(cfg.ranker.iterations)
+    )
+    sourcecost_selection, fixed_selection = resolve_tree_selection(
+        selection_metric,
+        validation_split=validation_split,
+        iterations=configured_iterations,
+    )
     needed = list(
         dict.fromkeys(
             [
@@ -329,11 +363,7 @@ def main() -> int:
             group_weight=validation_group_weight,
             feature_names=names,
         )
-    iterations = (
-        int(cfg.ranker.smoke_iterations)
-        if str(cfg.runtime.mode) == "smoke"
-        else int(cfg.ranker.iterations)
-    )
+    iterations = configured_iterations
     model = CatBoostRanker(
         loss_function=str(cfg.ranker.loss_function),
         eval_metric=str(cfg.ranker.eval_metric),
@@ -361,7 +391,7 @@ def main() -> int:
     staged_selection = None
     if sourcecost_selection:
         if eval_pool is None:
-            raise ValueError("SourceCost tree selection requires a validation pool")
+            raise AssertionError("resolved SourceCost selection has no validation pool")
         staged_selection = select_trees_by_sourcecost(
             model,
             eval_pool,
@@ -388,6 +418,7 @@ def main() -> int:
         "best_iteration": model.get_best_iteration(),
         "best_score": model.get_best_score(),
         "selection": staged_selection
+        or fixed_selection
         or {"metric": "catboost_eval", "best_iteration": model.get_best_iteration()},
         "label_column": label_column,
         "label_scale": label_scale,

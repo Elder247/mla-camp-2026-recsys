@@ -9,6 +9,7 @@ from scripts.train_ranker import (
     filter_training_window,
     group_weight_array,
     label_spec,
+    resolve_tree_selection,
     select_trees_by_sourcecost,
     sourcecost_recall_at_k,
 )
@@ -175,3 +176,30 @@ def test_staged_selection_shrinks_to_best_sourcecost_checkpoint() -> None:
     assert model.shrunk_to == 50
     assert report["best_trees"] == 50
     assert report["best_value"] == pytest.approx(1.0)
+
+
+def test_sourcecost_tree_selection_uses_temporal_validation() -> None:
+    enabled, fixed = resolve_tree_selection(
+        "sourcecost_recall", validation_split="holdout", iterations=400
+    )
+
+    assert enabled is True
+    assert fixed is None
+
+
+def test_full_fit_uses_temporal_selected_fixed_tree_count() -> None:
+    enabled, fixed = resolve_tree_selection(
+        "sourcecost_recall", validation_split=None, iterations=366
+    )
+
+    assert enabled is False
+    assert fixed == {
+        "metric": "fixed_iterations_from_temporal_sourcecost_selection",
+        "requested_metric": "sourcecost_recall",
+        "best_trees": 366,
+    }
+
+
+def test_unsupported_tree_selection_metric_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unsupported"):
+        resolve_tree_selection("auc", validation_split="holdout", iterations=10)
