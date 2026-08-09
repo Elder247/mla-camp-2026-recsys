@@ -990,3 +990,18 @@ YT recovery, private scoring and next direct TwoTower gate (2026-08-09):
   `20260809_2205_i21_tt_multihash_piecewise_100m_probe`. Detached supervisor
   `20260809_2255_i21_tt_multihash_piecewise_direct_full` will proceed only if
   the 100M candidate improves both temporal halves by at least `0.0001`.
+- v16 finished the 100M fit in `3,059.6s` over `21,813,184` examples at
+  `7,129 rows/s`. It improved Recall/SC@50 over the half-logQ control by
+  `+0.001428/+0.001837`, but SC@500 regressed by `-0.003593`; its new-only
+  top-50 SourceCost share was only `0.000229` versus `0.002648` in the other
+  direction;
+- the bounded two-half direct gate selected weights `0.60/0.40`, RRF `10`,
+  SourceCost exponent `0.15`, top `75`. Early/full SC@50 gains were
+  `+0.004636/+0.002506`, while the late gain was only `+0.0000003`, below the
+  predeclared `0.0001` threshold. The supervisor rejected v16 and did not run
+  validation full-fit or test inference. The accepted private control remains
+  SC@50 `0.6548`, Recall@50 `0.5339`, Recall@10 `0.3787`;
+- the next bounded screen replaces noisy per-batch logQ counts with an exact,
+  versioned global banner sampling prior computed only from the allowed
+  training scope. It starts on 10M and is promoted only on robust temporal
+  Recall/SourceCost Recall and complementarity.
