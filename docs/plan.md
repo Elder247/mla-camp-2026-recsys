@@ -548,3 +548,36 @@ Active bounded confirmation:
   the immutable artifact is complete. The expected train/export/probe cycle is
   about `15 minutes`; no temporal/full candidate rebuild is started before
   this retrieval gate.
+
+100M chronological retrieval decision (`20260809_0645_i2_tt_chrono100m_probe`):
+
+- strict chronological training processed `21,813,184` rows in `672.8s`
+  (`32.4k rows/s`), exported one million candidate embeddings in `35.6s`, and
+  finished with validation in-batch accuracy `0.848`;
+- against the existing shuffled 100M final model, chronological SC Recall@50
+  is `0.538797` versus `0.499927` (`+3.89 pp`) and Recall@50 is `0.476150`
+  versus `0.451585`. Its SC Recall@500 is `0.697190` versus `0.704623`, so the
+  old model remains useful at the tail;
+- complementarity is strong enough to promote: oracle-union SC Recall@500 is
+  `0.716937`, chronological-only hits contribute `1.136%` of total SourceCost,
+  and mean top-50 Jaccard is only `0.307`;
+- the first final evaluation invocation used the old source alias and failed
+  before metric computation. Re-running only evaluation with the resolved
+  `two_tower_v2_walk_forward` alias completed; neither training nor inference
+  was repeated for the accepted report.
+
+Chronological walk-forward promotion:
+
+- the original completed OOF artifact remains untouched. A versioned variant
+  manifest points its eight predict-before-update weekly snapshots at the same
+  leakage-safe models and switches only the post-training validation/test
+  fallback to the chronological 100M artifact;
+- OOF requests and 739 MB history events are hardlinked into the variant, so
+  config interpolation and provenance remain self-contained without copying
+  data. The incomplete first variant and failed `20260809_0700` preflight are
+  retained for audit; corrected `...chrono_final_v2` passed the artifact
+  contract and all `119` unit tests;
+- `20260809_0705_i2_chrono_temporal` is active. A detached supervisor will tune
+  only bounded QueryRMSE geometry and QueryRMSE/YetiRank rank ensembles, then
+  launch `20260809_0720_i2_chrono_full` only if honest SC Recall@50 exceeds
+  `0.650073` and merged candidate SC Recall@500 remains at least `0.700`.
