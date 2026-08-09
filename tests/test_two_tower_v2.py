@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 from two_tower_v2.data import (  # noqa: E402
     enrich_rows,
     pack_bags,
+    prefetch_batches,
     source_fields,
     wide_feature_bucket,
     yt_read_options,
@@ -320,6 +321,24 @@ def test_v7_uses_more_in_batch_negatives() -> None:
     assert full.training.batch_size == 4096
     assert full.paths.train_table.endswith("train_clicks_100m_metadata_v1")
     assert full.paths.artifact_dir.endswith("v7_large_batch_chrono_100m_model")
+    walk_forward = load_config(
+        ROOT / "configs" / "two_tower" / "v7_large_batch_walk_forward_100m_s10.yaml"
+    )
+    assert walk_forward.training.prefetch_batches == 2
+
+
+def test_prefetch_preserves_order_and_propagates_reader_errors() -> None:
+    values = [[{"value": 1}], [{"value": 2}], [{"value": 3}]]
+    assert list(prefetch_batches(iter(values), 2)) == values
+
+    def failing():
+        yield [{"value": 1}]
+        raise RuntimeError("remote read failed")
+
+    iterator = prefetch_batches(failing(), 1)
+    assert next(iterator) == [{"value": 1}]
+    with pytest.raises(RuntimeError, match="remote read failed"):
+        next(iterator)
 
 
 def test_validation_source_can_neutralize_new_optional_fields(monkeypatch) -> None:

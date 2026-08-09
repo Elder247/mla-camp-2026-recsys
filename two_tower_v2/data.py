@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import math
+import queue
 import random
+import threading
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
@@ -323,6 +325,57 @@ def batches(rows: Iterable[dict[str, Any]], size: int) -> Iterator[list[dict[str
             batch = []
     if batch:
         yield batch
+
+
+class _PrefetchFailure:
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+
+def prefetch_batches(
+    values: Iterable[list[dict[str, Any]]], depth: int
+) -> Iterator[list[dict[str, Any]]]:
+    """Preserve batch order while overlapping remote reads with GPU work."""
+
+    if depth <= 0:
+        yield from values
+        return
+    pending: queue.Queue[object] = queue.Queue(maxsize=int(depth))
+    stop = threading.Event()
+    sentinel = object()
+
+    def put(value: object) -> bool:
+        while not stop.is_set():
+            try:
+                pending.put(value, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def produce() -> None:
+        try:
+            for value in values:
+                if not put(value):
+                    return
+        except BaseException as error:
+            put(_PrefetchFailure(error))
+        else:
+            put(sentinel)
+
+    worker = threading.Thread(target=produce, name="two-tower-prefetch", daemon=True)
+    worker.start()
+    try:
+        while True:
+            value = pending.get()
+            if value is sentinel:
+                break
+            if isinstance(value, _PrefetchFailure):
+                raise value.error
+            yield value  # type: ignore[misc]
+    finally:
+        stop.set()
+        worker.join(timeout=1.0)
 
 
 def pack_bags(

@@ -24,6 +24,7 @@ from two_tower_v2.data import (
     enrich_rows,
     feature_bucket,
     pack_bags,
+    prefetch_batches,
     shuffled_rows,
 )
 from two_tower_v2.model import TwoTowerV2
@@ -334,13 +335,16 @@ def train_model(
     max_examples = int(cfg.training.max_examples)
     for epoch in range(int(cfg.training.epochs)):
         iterator = iter(
-            batches(
-                shuffled_rows(
-                    source.rows(),
-                    buffer_size=int(cfg.training.shuffle_buffer),
-                    seed=seed + epoch,
+            prefetch_batches(
+                batches(
+                    shuffled_rows(
+                        source.rows(),
+                        buffer_size=int(cfg.training.shuffle_buffer),
+                        seed=seed + epoch,
+                    ),
+                    int(cfg.training.batch_size),
                 ),
-                int(cfg.training.batch_size),
+                int(cfg.training.get("prefetch_batches", 0)),
             )
         )
         while True:

@@ -16,3 +16,6 @@ tracking:
 
 training:
   batch_size: 4096
+  # Preserve the exact YT row order while overlapping remote batch reads with
+  # GPU updates. Two raw batches are a bounded memory cost.
+  prefetch_batches: 2

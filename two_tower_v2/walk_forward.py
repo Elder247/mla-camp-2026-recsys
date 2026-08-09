@@ -31,6 +31,7 @@ from two_tower_v2.data import (
     batches,
     enrich_rows,
     pack_bags,
+    prefetch_batches,
     shuffled_rows,
 )
 from two_tower_v2.training import (
@@ -125,13 +126,16 @@ def train_week(
     last_loss = 0.0
     last_accuracy = 0.0
     iterator = iter(
-        batches(
-            shuffled_rows(
-                rows,
-                buffer_size=int(cfg.training.shuffle_buffer),
-                seed=int(cfg.training.seed) + week_index,
+        prefetch_batches(
+            batches(
+                shuffled_rows(
+                    rows,
+                    buffer_size=int(cfg.training.shuffle_buffer),
+                    seed=int(cfg.training.seed) + week_index,
+                ),
+                int(cfg.training.batch_size),
             ),
-            int(cfg.training.batch_size),
+            int(cfg.training.get("prefetch_batches", 0)),
         )
     )
     max_examples = int(cfg.walk_forward.get("max_examples_per_week", 0))
