@@ -1,0 +1,119 @@
+USE kolmogorov;
+
+PRAGMA yt.TemporaryCompressionCodec = "zstd_3";
+PRAGMA yt.UseNativeYtTypes;
+
+$train = "//home/bm/users/argus/mla/data/train_100m";
+$validation = "//home/bm/users/argus/mla/data/val_clicks";
+$test = "//home/bm/users/argus/mla/data/test_clicks";
+$cutoff_7d = 1781038797ul;
+$cutoff_42d = 1778014797ul;
+
+$target_query_rows = (
+    SELECT SearchQuery AS search_query
+    FROM $validation
+    WHERE SearchQuery IS NOT NULL AND SearchQuery != ""
+
+    UNION ALL
+
+    SELECT SearchQuery AS search_query
+    FROM $test
+    WHERE SearchQuery IS NOT NULL AND SearchQuery != ""
+);
+
+$target_queries = (
+    SELECT search_query
+    FROM $target_query_rows
+    GROUP BY search_query
+);
+
+$matched_impressions = (
+    SELECT
+        train.SearchQuery AS search_query,
+        train.BannerID AS banner_id,
+        COALESCE(train.IsClick, 0) AS is_click,
+        COALESCE(train.SourceCost, 0) AS source_cost,
+        COALESCE(train.ShowTime, 0ul) AS show_time
+    FROM $train AS train
+    INNER JOIN $target_queries AS targets
+        ON train.SearchQuery == targets.search_query
+    WHERE
+        train.BannerID IS NOT NULL
+        AND train.SearchQuery IS NOT NULL
+        AND train.SearchQuery != ""
+);
+
+$stats = (
+    SELECT
+        search_query,
+        banner_id,
+        COUNT(*) AS show_count,
+        SUM(IF(is_click > 0, 1ul, 0ul)) AS click_count,
+        SUM(IF(is_click > 0, source_cost, 0)) AS click_source_cost_sum,
+        MAX(show_time) AS last_show_time,
+        SUM(IF(show_time >= $cutoff_7d, 1ul, 0ul)) AS show_count_7d,
+        SUM(IF(show_time >= $cutoff_7d AND is_click > 0, 1ul, 0ul)) AS click_count_7d,
+        SUM(IF(show_time >= $cutoff_42d, 1ul, 0ul)) AS show_count_42d,
+        SUM(IF(show_time >= $cutoff_42d AND is_click > 0, 1ul, 0ul)) AS click_count_42d
+    FROM $matched_impressions
+    GROUP BY
+        search_query,
+        banner_id
+);
+
+$ranked = (
+    SELECT
+        stats.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY show_count DESC, click_count DESC, last_show_time DESC, banner_id
+        ) AS rank_shows,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY click_count DESC, show_count DESC, last_show_time DESC, banner_id
+        ) AS rank_clicks,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY (CAST(click_count AS Double) + 1.0) / (CAST(show_count AS Double) + 20.0) DESC,
+                click_count DESC, show_count DESC, last_show_time DESC, banner_id
+        ) AS rank_smoothed_ctr,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY click_source_cost_sum DESC, click_count DESC, show_count DESC, banner_id
+        ) AS rank_click_value,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY last_show_time DESC, click_count DESC, show_count DESC, banner_id
+        ) AS rank_recency,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY show_count_7d DESC, click_count_7d DESC, last_show_time DESC, banner_id
+        ) AS rank_shows_7d,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY click_count_7d DESC, show_count_7d DESC, last_show_time DESC, banner_id
+        ) AS rank_clicks_7d,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY show_count_42d DESC, click_count_42d DESC, last_show_time DESC, banner_id
+        ) AS rank_shows_42d,
+        ROW_NUMBER() OVER (
+            PARTITION BY search_query
+            ORDER BY click_count_42d DESC, show_count_42d DESC, last_show_time DESC, banner_id
+        ) AS rank_clicks_42d
+    FROM $stats AS stats
+);
+
+SELECT
+    ranked.*
+FROM $ranked AS ranked
+WHERE
+    rank_shows <= 100
+    OR rank_clicks <= 100
+    OR rank_smoothed_ctr <= 100
+    OR rank_click_value <= 100
+    OR rank_recency <= 100
+    OR rank_shows_7d <= 100
+    OR rank_clicks_7d <= 100
+    OR rank_shows_42d <= 100
+    OR rank_clicks_42d <= 100;
