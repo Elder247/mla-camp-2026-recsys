@@ -1,0 +1,47 @@
+experiment:
+  name: i33_v17_protective_index_blend
+  description: Cached v17 retrieval over 3.065M and 4.951M canonical indexes
+
+paths:
+  root: /home/astrofimuk/workspace/mla_two_stage_accel
+  runs: /home/astrofimuk/workspace/mla_two_stage/runs
+  cache: /home/astrofimuk/workspace/mla_two_stage/cache
+  immutable_artifacts: /home/astrofimuk/workspace/mla_two_stage/artifacts
+  two_tower_v17_sc1m_full_artifact: ${paths.immutable_artifacts}/two_tower_v17_global_logq_chrono100m_valfit_full_targeted3065k
+  two_tower_v17_fulltrainseen_full_artifact: ${paths.immutable_artifacts}/two_tower_v17_global_logq_chrono100m_valfit_full_targeted4951k
+
+candidates:
+  rrf_constant: 30.0
+  union_max_candidates: 500
+  ranker_pool: 500
+  generators:
+    two_tower_v17_sc1m:
+      enabled: true
+      resource: gpu
+      feature_name: two_tower_v17_sc1m
+      code_path_key: two_tower_v2_code
+      code_dependency_path_keys:
+        - two_tower_v2_model_code
+        - two_tower_v2_data_code
+        - two_tower_v2_training_code
+      artifact_path_key: two_tower_v17_sc1m_full_artifact
+      python_path_keys: [root, step2_root]
+      quota: 500
+      top_k: 500
+      weight: 1.0
+      batch_size: 256
+    two_tower_v17_fulltrainseen:
+      enabled: true
+      resource: gpu
+      feature_name: two_tower_v17_fulltrainseen
+      code_path_key: two_tower_v2_code
+      code_dependency_path_keys:
+        - two_tower_v2_model_code
+        - two_tower_v2_data_code
+        - two_tower_v2_training_code
+      artifact_path_key: two_tower_v17_fulltrainseen_full_artifact
+      python_path_keys: [root, step2_root]
+      quota: 500
+      top_k: 500
+      weight: 1.0
+      batch_size: 256
