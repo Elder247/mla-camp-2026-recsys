@@ -1070,3 +1070,125 @@ v17 exact global logQ 100M result (2026-08-10):
   positive early/late temporal gains and higher full Recall@50, but scored
   only private SC@50 `0.6644` (Recall@50 `0.5691`, Recall@10 `0.4303`) and is
   rejected. No further leaderboard geometry search is performed.
+
+Focused post-v17 audit and full-catalog history (2026-08-10):
+
+- the frozen retrieval index contains the one million most frequent banners
+  from the canonical `69,231,054`-row catalog. On the honest holdout, `32.0%`
+  of clicked targets and `25.23%` of total SourceCost are outside that index;
+  the accepted v17 ensemble reaches SC@50 `0.91097` on the reachable core but
+  effectively zero outside it. This is the dominant remaining bottleneck;
+- v17 itself leaves `3.53%` of total SourceCost at ranks `51..100` and `4.15%`
+  at `101..500`. The final ensemble already recovers most of the former but
+  only a small part of the latter. Unseen queries carry `19.60%` of total
+  SourceCost and remain the weakest large segment (v17 SC@50 `0.25238`,
+  SC@500 `0.41247`);
+- the leakage-safe v17/logQ natural-pool CatBoost reranker was rejected. Its
+  standalone SC/Recall@50 were `0.67174/0.59269`; adding it to the accepted
+  ranking reached full SC@50 `0.68494`, but the incremental gain was only
+  `0.00377` and SC@500 fell. A rare-query logQ route also reduced late-period
+  quality and Recall;
+- causal query history was rebuilt without the historical one-million-banner
+  restriction, still using only events strictly before each request. It adds
+  `26,719` outside-core candidates on temporal holdout and `53,753` on test;
+  all test IDs were verified against the canonical 69M catalog. The common
+  targeted validation universe has `1,064,674` banners, only `6.47%` larger
+  than the frozen index;
+- query-history retrieval adds 51 v17-missed temporal targets carrying
+  `1.928%` of total SourceCost. The fixed current/history blend `0.60/0.40`,
+  RRF `0`, and no extra geometry passed the gate: early/late/full SC@50
+  `0.71490/0.67603/0.69704`, full Recall@50 `0.61211`, and SC@500 `0.72507`;
+- query-region history, canonical SourceCost geometry, boundary history
+  weights, and an outside-1M-only route were checked from cache and rejected:
+  each reduced the later temporal half or Recall relative to the simple query
+  history blend;
+- the full history run covered `7,003/10,000` test requests and produced a
+  strict 10,000-by-50 submission in about three minutes of history inference.
+  All output banners are canonical; full SHA-256 is
+  `1bf1fb4e110eb2b66cde67dcba62c70719cf655534aad4135697847342f9ccdc`;
+- leaderboard entry `v18 targeted fullcatalog history` scored private SC@50
+  `0.6756`, Recall@50 `0.5707`, and Recall@10 `0.4318`. It improves v17 by
+  `+0.0047` SC and `+0.0043` Recall, but remains below the `0.6800` goal and
+  the `0.6794` leader. Cost-decile metrics improved through p99, while the
+  p99--100 slice regressed from `0.7976` to `0.7904`;
+- because exact history generalized at only about 30% of its temporal gain,
+  the only remaining cached check is semantic v17 retrieval over the same
+  targeted 1.065M catalog. It re-encodes candidates with the immutable v17
+  checkpoint and performs no new training; promotion requires new expensive
+  hits plus positive SC/Recall on both temporal halves.
+
+Targeted semantic-index result (2026-08-10):
+
+- the canonical targeted index contains exactly `1,064,674` unique banners,
+  preserves the original 11-field Arrow schema, and has SHA-256
+  `57d2f04b2808c4329b5aaf570a48ee6701ff91ba662465dc245851814612536a`.
+  Re-encoding it with the immutable v17 checkpoint took `116.7s`; no model
+  training or target-dependent positive injection was used;
+- expanded v17 improved standalone temporal Recall/SC@50 from
+  `0.60040/0.66001` to `0.60983/0.68447`, and Recall/SC@500 from
+  `0.66495/0.73687` to `0.69409/0.78769`. It adds 108 target hits carrying
+  `5.157%` of total SourceCost, versus 32 reverse-only hits carrying `0.287%`;
+- substituting it into the accepted `0.40/0.60`, RRF-20, exponent-0.20,
+  top-75 v17 ensemble passes both halves: early/late/full SC@50 are
+  `0.71867/0.67091/0.69672`, Recall@50 is `0.60925`, and SC@500 is `0.75544`.
+  Adding full-catalog history on top reduces the later half and is rejected;
+- full-fit candidate export took `122.1s`; inference over 10,000 test requests
+  took `101.5s`. The output passed two independent strict 10,000-by-50 checks;
+  VM/local full SHA-256 is
+  `963d0a88f3c9cdb6588d8fe6cd5068f59f5eb86fe8a2946951e85e47573cbcd7`;
+- leaderboard entry `v19 targeted ANN 1.065m` scored private SC@50 `0.6767`,
+  Recall@50 `0.5714`, and Recall@10 `0.4343`. It is the new personal best but
+  remains below the `0.6794` leader and `>0.6800` goal. Its p99--100 SC slice
+  recovered to `0.7976`; the lower private cost slices remain roughly flat;
+- a past-unseen-query-only history route improved honest early/late/full
+  SC@50 to `0.71948/0.68140/0.70198`, but fails the SC@500 preservation gate.
+  Applying the measured history private/temporal transfer ratio predicts only
+  about `+0.0016` private SC, insufficient for the goal, so it is not uploaded;
+- a read-only train-prior coverage audit shows that adding the first 500,000
+  highest-frequency IDs outside the targeted index raises honest reachable SC
+  from `0.80029` to `0.81281` (63 new target hits, `+0.01252` total
+  SourceCost) at only `1.47x` index size. A second disjoint 500,000-ID tranche
+  raises it further to `0.81905` (98 cumulative new hits, `+0.01876` SC). Both
+  tranches are train-only, independent of holdout targets, and are promoted
+  sequentially only while actual SC@50 improves on both temporal halves and
+  Recall@50 plus SC@500 remain positive.
+
+Bounded popularity-index trade-off and winning v20 (2026-08-10):
+
+- the first popularity tranche expands the canonical targeted index from
+  `1,064,674` to `1,564,674` banners (`1.565M`, only `1.47x` the targeted
+  index). Its SHA-256 is
+  `6ae01cf2f416f9ecb5315cfb24d5d40d9ce5ee533e71712d9d1871459c487e45`;
+  re-export and temporal inference took `176.6s` and `38.7s`;
+- standalone temporal Recall/SC@50 improve to `0.61839/0.69312` and SC@500
+  to `0.79318`. In the fixed production ensemble, early/late/full SC@50 are
+  `0.72313/0.68332/0.70483`, Recall@50 is `0.61582`, and SC@500 is
+  `0.76511`; all promotion gates pass;
+- the second popularity tranche produces a final `2,064,674`-banner index,
+  still only `2.06x` the original one-million index and far below the full
+  69M catalog. Its SHA-256 is
+  `6b9c930b871c8a7ea07e642b18b8a53c97ed91527dff80a3429450d67f763e7b`;
+  temporal re-export and inference took `231.4s` and `40.2s`;
+- standalone temporal Recall/SC@50 reach `0.62068/0.69585`, while SC@500
+  reaches `0.79802`. The unchanged production ensemble reaches early/late/full
+  SC@50 `0.72458/0.68911/0.70828`, Recall@50 `0.61925`, and SC@500
+  `0.76807`. Relative to v19 this is `+0.01156` full temporal SC@50 with
+  positive gains on both halves (`+0.00591/+0.01820` versus the corresponding
+  v19 halves), positive Recall, and positive SC@500;
+- the final validation full-fit re-export took `232.6s`, test inference over
+  10,000 requests took `112.0s`, and deterministic materialization took
+  `5.1s`. The output passed strict validation with exactly `10,000` rows,
+  exactly 50 banners per row, `short_rows=0`, and no invalid IDs. VM and local
+  full SHA-256 are
+  `9e0cfa51652b64a305217474b5c7c212691e201e4959ac1ca02863ca8df3fc4c`;
+- leaderboard entry `v20 targeted ANN 2.065m` scored private SC@50 `0.6886`,
+  Recall@50 `0.5829`, and Recall@10 `0.4386`. It beats v19 by `+0.0119` SC,
+  the previous leader by `+0.0092`, clears the `>0.6800` goal by `+0.0086`,
+  and takes first place. Private SC@50 by SourceCost slice is
+  `0.5207/0.5650/0.6102/0.5954/0.6858/0.8125` for
+  p0--25/p25--50/p50--75/p75--90/p90--99/p99--100 respectively;
+- the winning change uses the immutable v17 checkpoint and the already fixed
+  `0.40/0.60`, RRF-20, exponent-0.20, top-75 geometry. No new model fit,
+  target-dependent injection, or leaderboard parameter search was performed.
+  Relevant commits before documentation are `73aafdb`, `ed9fc52`, and
+  `c696784`; the full regression suite passed `197/197`.
