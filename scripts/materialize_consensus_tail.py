@@ -31,10 +31,13 @@ from scripts.tune_top50_ensemble import read_ranking  # noqa: E402
 def consensus_tail(
     control: list[int],
     alternate: list[int],
+    source_costs: dict[int, float] | None = None,
     *,
     preserve_top: int,
     alternate_weight: float,
     rrf_constant: float,
+    source_cost_exponent: float = 0.0,
+    source_cost_scale: float = 1_000_000.0,
 ) -> list[int]:
     if len(control) != 50 or len(set(control)) != 50:
         raise ValueError("control ranking must contain exactly 50 unique IDs")
@@ -46,6 +49,11 @@ def consensus_tail(
         raise ValueError("alternate_weight must be in [0, 1]")
     if rrf_constant < 0.0:
         raise ValueError("rrf_constant must be non-negative")
+    if source_cost_exponent < 0.0:
+        raise ValueError("source_cost_exponent must be non-negative")
+    if source_cost_scale <= 0.0:
+        raise ValueError("source_cost_scale must be positive")
+    source_costs = source_costs or {}
 
     kept = list(control[:preserve_top])
     kept_set = set(kept)
@@ -65,6 +73,8 @@ def consensus_tail(
             score += alternate_weight / (
                 rrf_constant + alternate_rank[banner]
             )
+        source_cost = max(0.0, float(source_costs.get(banner, 0.0)))
+        score *= (1.0 + source_cost / source_cost_scale) ** source_cost_exponent
         best_rank = min(control_rank.get(banner, 10**9), alternate_rank.get(banner, 10**9))
         scored.append((score, best_rank, banner))
     scored.sort(key=lambda item: (-item[0], item[1], item[2]))
@@ -83,6 +93,8 @@ def main() -> int:
     parser.add_argument("--preserve-top", type=int, default=10)
     parser.add_argument("--alternate-weight", type=float, default=0.5)
     parser.add_argument("--rrf-constant", type=float, default=30.0)
+    parser.add_argument("--source-cost-exponent", type=float, default=0.0)
+    parser.add_argument("--source-cost-scale", type=float, default=1_000_000.0)
     parser.add_argument("--scope", choices=("offline", "full"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--report", type=Path)
@@ -92,6 +104,12 @@ def main() -> int:
     control = read_ranking(args.control)
     alternate = read_ranking(args.alternate)
     requests = read_request_parquet(args.requests)
+    index = pq.read_table(args.banner_index, columns=["BannerID", "SourceCost"])
+    index_values = index.to_pydict()
+    source_costs = {
+        int(banner): float(cost or 0.0)
+        for banner, cost in zip(index_values["BannerID"], index_values["SourceCost"])
+    }
     rows = []
     changed = 0
     overlaps = []
@@ -102,9 +120,12 @@ def main() -> int:
         banners = consensus_tail(
             control_order,
             alternate_order,
+            source_costs,
             preserve_top=args.preserve_top,
             alternate_weight=args.alternate_weight,
             rrf_constant=args.rrf_constant,
+            source_cost_exponent=args.source_cost_exponent,
+            source_cost_scale=args.source_cost_scale,
         )
         changed += int(banners != control_order)
         overlaps.append(len(set(control_order) & set(alternate_order)))
@@ -121,11 +142,10 @@ def main() -> int:
     with atomic_output_path(args.output) as temporary:
         pq.write_table(pa.Table.from_pylist(rows, schema=schema), temporary, compression="zstd")
 
-    index = pq.read_table(args.banner_index, columns=["BannerID"])
     validation = validate_submission(
         args.output,
         expected_hitlog_ids={int(row["hit_log_id"]) for row in requests},
-        valid_banner_ids={int(value) for value in index["BannerID"]},
+        valid_banner_ids=set(source_costs),
         top_k=50,
         allow_short=False,
     )
@@ -135,6 +155,8 @@ def main() -> int:
         "preserve_top": args.preserve_top,
         "alternate_weight": args.alternate_weight,
         "rrf_constant": args.rrf_constant,
+        "source_cost_exponent": args.source_cost_exponent,
+        "source_cost_scale": args.source_cost_scale,
         "route": "preserve control prefix and fill tail by two-ranking RRF consensus",
     }
     write_output_manifest(
