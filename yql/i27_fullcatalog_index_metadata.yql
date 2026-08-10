@@ -1,0 +1,23 @@
+USE kolmogorov;
+
+PRAGMA yt.TemporaryCompressionCodec = "zstd_3";
+PRAGMA yt.UseNativeYtTypes;
+
+$index = "//home/bm/users/argus/mla/index";
+$targeted_ids = "//tmp/astrofimuk_mla_two_stage/i27_fullcatalog_test_banner_ids_20260810_0330";
+
+SELECT
+    index.BannerID AS BannerID,
+    index.BannerText AS BannerText,
+    index.BannerTitle AS BannerTitle,
+    index.BannerURL AS BannerURL,
+    index.CaesarModelID AS CaesarModelID,
+    index.CaesarSkuID AS CaesarSkuID,
+    index.ClientID AS ClientID,
+    index.GroupExportID AS GroupExportID,
+    index.OrderID AS OrderID,
+    index.ProductPrice AS ProductPrice,
+    index.SourceCost AS SourceCost
+FROM $index AS index
+INNER JOIN $targeted_ids AS targeted
+    ON index.BannerID == targeted.BannerID;
