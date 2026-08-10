@@ -1192,3 +1192,54 @@ Bounded popularity-index trade-off and winning v20 (2026-08-10):
   target-dependent injection, or leaderboard parameter search was performed.
   Relevant commits before documentation are `73aafdb`, `ed9fc52`, and
   `c696784`; the full regression suite passed `197/197`.
+
+SourceCost-targeted 3.065M and protective full-train-seen blend (2026-08-10):
+
+- outside the accepted 2.065M index, the exact train-only global-logQ prior
+  contains `2,885,876` remaining banners; every one has train count `1`.
+  The next `1,000,000` are therefore selected leakage-safely by static
+  canonical `SourceCost DESC, BannerID ASC`, without holdout/test targets.
+  The resulting index has `3,064,674` unique rows and SHA-256
+  `9137f119e447867b1bdcf688ee5b9a17a14f07ebb7132653fcad6fea76888314`;
+- against the 2.065M source, standalone 3.065M Recall/SC@50 improve from
+  `0.620680/0.695849` to `0.621822/0.701584`, while SC@500 improves from
+  `0.798015` to `0.803972`. It contributes 31 new top-50 hits versus eight
+  reverse-only hits. A bounded geometry sweep selects weights `0.40/0.60`,
+  RRF `30`, exponent `0.25`, top `75`; early/late/full SC@50 are
+  `0.733143/0.694585/0.715424`, Recall@50 is `0.622108`, and SC@500 is
+  `0.778341`. Every gate is positive versus v20;
+- the final canonical index has `4,950,550` unique rows and SHA-256
+  `a8a0392e69c4170aee78e794f4123ab2226c9f880eee3de4a66891d74775ad3a`.
+  It covers all `4,922,549` train-seen banners plus the 28,001 targeted
+  non-train extras. Its direct ranking increases Recall@50 to `0.627249` and
+  SC@500 to `0.804527`, but reduces standalone SC@50 to `0.700832`, so it is
+  not accepted directly;
+- its complementarity is nevertheless positive: 62 new top-50 hits versus
+  13 reverse-only hits. The protective fusion
+  `proxy/3.065M/4.951M = 0.40/0.10/0.50`, RRF `30`, exponent `0.25`, top `75`
+  passes the two-half gate with early/late/full SC@50
+  `0.733260/0.695613/0.715960`, Recall@50 `0.626107`, and SC@500 `0.780152`.
+  Relative to direct 3.065M these are SC gains
+  `+0.000117/+0.001028/+0.000536`, Recall@50 `+0.003999`, and SC@500
+  `+0.001811`. The conservative accepted neighbour uses weights
+  `0.40/0.20/0.40` and reaches early/late/full SC@50
+  `0.733275/0.695424/0.715881`;
+- no new model fit was run. Re-exporting the immutable validation checkpoint
+  took `342.8s` for 3.065M and `543.7s` for 4.951M; test inference took
+  `133.3s` and `143.5s`. All three predeclared outputs independently pass
+  strict 10,000-by-50 validation with `short_rows=0` and no invalid IDs;
+- full VM/local SHA-256 values are
+  `bfbb2ccb0e4c3b21c01694ea633003ebe59584ce796a27a472e4b4911574473f`
+  for v21 protective,
+  `d3ea36db69e3111aa1be31cc33636763a6f3d58a802f3542a6ae79d6aeefe739`
+  for v22 conservative, and
+  `e72c74586961d90ad688c04ea6d46530176d11e635747727facafddc77ad36b0`
+  for v23 direct 3.065M;
+- leaderboard scores are: v21 `0.6974/0.5954/0.4363`, v22
+  `0.6988/0.5923/0.4360`, and v23 `0.6975/0.5876/0.4362` for private
+  SC@50/Recall@50/Recall@10. v22 is the new overall #1, improves v20 by
+  `+0.0102` absolute private SC@50, clears the `>0.6800` goal by `+0.0188`,
+  and leads the next participant (`0.6827`) by `+0.0161`;
+- commits `85b140e` and `05305df` record the SELECT-only YQL lookups and the
+  single reproducible two-source full-run config. The complete regression
+  suite passes `197/197` after both changes.
