@@ -398,11 +398,21 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20260810)
     parser.add_argument("--score-batch-rows", type=int, default=131072)
     parser.add_argument("--top-k", type=int, default=500)
+    parser.add_argument(
+        "--residual-alphas",
+        default="0,0.01,0.02,0.05,0.1,0.2,0.35,0.5,0.75,1",
+        help="Bounded residual shrinkage grid selected on the early holdout half",
+    )
     args = parser.parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError("DCNv2 screen requires CUDA")
     if args.epochs <= 0 or args.groups_per_batch <= 0:
         parser.error("epochs and groups-per-batch must be positive")
+    residual_alphas = sorted(
+        {float(value) for value in args.residual_alphas.split(",") if value}
+    )
+    if not residual_alphas or residual_alphas[0] < 0.0 or residual_alphas[-1] > 1.0:
+        parser.error("residual-alphas must be a non-empty grid in [0, 1]")
     args.output_dir.mkdir(parents=True, exist_ok=False)
     (args.output_dir / "models").mkdir()
     (args.output_dir / "predictions").mkdir()
@@ -459,6 +469,7 @@ def main() -> int:
     best_key: tuple[float, float] | None = None
     best_state = None
     best_epoch = 0
+    best_alpha = 0.0
     order_rng = np.random.default_rng(args.seed)
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -499,34 +510,64 @@ def main() -> int:
             device=device,
             batch_rows=args.score_batch_rows,
         )
-        candidate = temporal_metrics(holdout, holdout_scores, holdout_requests)
-        deltas = metric_deltas(candidate, baseline)
+        raw_candidate = temporal_metrics(holdout, holdout_scores, holdout_requests)
+        alpha_results = []
+        for alpha in residual_alphas:
+            shrunk_scores = baseline_scores + alpha * (
+                holdout_scores - baseline_scores
+            )
+            candidate = temporal_metrics(holdout, shrunk_scores, holdout_requests)
+            alpha_results.append(
+                {
+                    "alpha": alpha,
+                    "metrics": candidate,
+                    "deltas": metric_deltas(candidate, baseline),
+                }
+            )
+        selected = max(
+            alpha_results,
+            key=lambda row: (
+                float(row["metrics"]["early"]["50"]["sourcecost_recall"]),
+                float(row["metrics"]["early"]["50"]["recall"]),
+                -float(row["alpha"]),
+            ),
+        )
         key = (
-            float(candidate["early"]["50"]["sourcecost_recall"]),
-            float(candidate["early"]["50"]["recall"]),
+            float(selected["metrics"]["early"]["50"]["sourcecost_recall"]),
+            float(selected["metrics"]["early"]["50"]["recall"]),
         )
         history.append(
             {
                 "epoch": epoch,
                 "loss": float(np.mean(losses)),
-                "metrics": candidate,
-                "deltas": deltas,
+                "raw_metrics": raw_candidate,
+                "selected_alpha": selected["alpha"],
+                "metrics": selected["metrics"],
+                "deltas": selected["deltas"],
+                "alpha_results": alpha_results,
             }
         )
         print(json.dumps(history[-1]), flush=True)
         if best_key is None or key > best_key:
             best_key = key
             best_epoch = epoch
+            best_alpha = float(selected["alpha"])
             best_state = copy.deepcopy(model.state_dict())
 
     if best_state is None:
         raise AssertionError("training did not produce a checkpoint")
     model.load_state_dict(best_state)
-    final_scores = score_model(
+    raw_final_scores = score_model(
         model,
         holdout,
         device=device,
         batch_rows=args.score_batch_rows,
+    )
+    final_scores = baseline_scores + best_alpha * (
+        raw_final_scores - baseline_scores
+    )
+    raw_final_metrics = temporal_metrics(
+        holdout, raw_final_scores, holdout_requests
     )
     final_metrics = temporal_metrics(holdout, final_scores, holdout_requests)
     final_deltas = metric_deltas(final_metrics, baseline)
@@ -570,7 +611,9 @@ def main() -> int:
         },
         "parameters": vars(args) | {"source_run": str(args.source_run), "output_dir": str(args.output_dir)},
         "best_epoch": best_epoch,
+        "selected_residual_alpha": best_alpha,
         "baseline": baseline,
+        "raw_candidate": raw_final_metrics,
         "candidate": final_metrics,
         "deltas": final_deltas,
         "history": history,
