@@ -1285,3 +1285,38 @@ DCNv2, lexical safety, and accepted-ranking consensus tail (2026-08-10):
   ahead of the next participant at `0.6842`. Private SC@50 by SourceCost slice
   is `0.5229/0.5751/0.6266/0.6183/0.6921/0.8197` for
   p0--25/p25--50/p50--75/p75--90/p90--99/p99--100 respectively.
+
+Protected v26/v20 value tail and 70% milestone (2026-08-10):
+
+- a three-way v21/v22/v23 consensus and a bounded v23-only rank-50 route were
+  screened first. Neither produced a single configuration with positive
+  SC@50 and non-negative Recall@50 on both temporal halves, so neither was
+  materialized for the leaderboard;
+- the more independent v20 2.065M ranking overlaps v26 on an average `43.9994`
+  of 50 temporal candidates. The selected protected fusion keeps v26 ranks
+  1--40 exactly and fills only ranks 41--50 using equal-weight RRF-30 over v26
+  and v20, multiplied by canonical SourceCost geometry with exponent `0.25`.
+  It uses no request targets or private answers;
+- versus v26, early/late temporal SC@50 changes by
+  `+0.000289/+0.002229`; full SC@50 changes by `+0.001181`. Recall@10 is
+  exactly unchanged, while Recall@50 trades `-0.001143` full for the targeted
+  SC gain. The 10,000-sample request bootstrap has `P(delta>0)=0.7124` and
+  95% CI `[-0.002062, 0.005648]`; user-cluster bootstrap has
+  `P(delta>0)=0.7135`. The interval crosses zero, so the promotion is recorded
+  as a bounded, moderate-confidence decision rather than a statistically
+  conclusive one. Observed temporal SC deltas by stratum are
+  `-0.002203/+0.001333/+0.002110/0.0` for p0--50/p50--90/p90--99/p99--100;
+- full materialization changes only the protected last ten positions in
+  `9,983/10,000` requests and passes strict validation with exactly 10,000
+  rows, 50 unique valid IDs per row, `short_rows=0`, and no errors. VM/local
+  full SHA-256 is
+  `7106ad42a009f43ef3e6e9c415acbf66b0dbf681dd6a5019f964952425054008`.
+  Commit `227a33e` contains the value-aware materializer extension and tests;
+  the full regression suite passes `207/207`;
+- leaderboard entry `v27 protected v26-v20 value tail` scores private SC@50
+  `0.7005`, Recall@50 `0.5919`, and Recall@10 `0.4360`. It improves v26 by
+  `+0.0014` absolute SC@50 and establishes a verified score above 70% while
+  retaining first place. Private SC@50 by SourceCost slice is
+  `0.5172/0.5717/0.6229/0.6180/0.6927/0.8269` for
+  p0--25/p25--50/p50--75/p75--90/p90--99/p99--100 respectively; the decisive
+  gain is in the p99--100 tail (`+0.0072` versus v26).
