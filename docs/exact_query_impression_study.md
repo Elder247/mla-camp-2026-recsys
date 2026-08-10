@@ -49,6 +49,11 @@ positive early groups.  A separate 250-tree `h500 + exact` CatBoost was trained
 on 4,172,934 rows from 5,414 positive groups and evaluated on 2,587,644 rows.
 Neither learned ranker beats the simple temporal hybrid.
 
+The selected hybrid was also checked with 10,000 paired bootstrap iterations.
+The request bootstrap gives a +1.50 pp point estimate with 95% interval
+`[+0.33, +3.02]` pp and `P(gain > 0) = 99.64%`.  Clustering by user gives
+`[+0.33, +3.10]` pp and `P(gain > 0) = 99.69%` (3,499 user clusters).
+
 ## Materialized private candidates
 
 All files contain exactly 10,000 unique `HitLogID` rows and 50 unique banner
@@ -60,5 +65,17 @@ IDs per row.
 | `test_top50_imp_recency_e30_v27.parquet` | `317e59f8d7ffaa863735199a68f3837759643b022bfe3d0f8203aaea2e7a957a` |
 | `test_top50_imp_clicks7_m25_e20_v27.parquet` | `b2a7ef9e42ae199f342efd160b7618e19f29656fd152413f20d81f16ff04437e` |
 
-The first file was accepted by the scorer as run `9fe0c4899caf`; its private
-metrics were still queued when this document was first written.
+## Private results
+
+| Run | Ranking | SC Recall@50 | Recall@50 | Recall@10 |
+|---|---|---:|---:|---:|
+| `9fe0c4899caf` | recency + 25% model, exact-20 | **71.24%** | **60.98%** | 44.15% |
+| `ddb6a675618a` | recency, exact-30 | 70.90% | 60.65% | 41.44% |
+| `8fe64b549cbd` | 7-day clicks + 25% model, exact-20 | 71.01% | 60.80% | **45.31%** |
+
+The selected run improves the protected v27 private SC Recall@50 from 70.05%
+to 71.24%, an absolute gain of 1.19 percentage points.  The private result
+therefore confirms both the all-impressions candidate source and the small
+benefit from semantic reordering.  The exact-only and `h500 + exact` learned
+rankers fail to improve temporal metrics, and the remaining private gap to the
+78% mixed-pool solutions cannot be explained by either tested hypothesis.
