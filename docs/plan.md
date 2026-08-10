@@ -1243,3 +1243,45 @@ SourceCost-targeted 3.065M and protective full-train-seen blend (2026-08-10):
 - commits `85b140e` and `05305df` record the SELECT-only YQL lookups and the
   single reproducible two-source full-run config. The complete regression
   suite passes `197/197` after both changes.
+
+DCNv2, lexical safety, and accepted-ranking consensus tail (2026-08-10):
+
+- the main i34 hypothesis reused the leakage-safe i26 natural candidate cache
+  (`3,391,225` train and `1,829,068` holdout feature rows, 159 features). The
+  raw DCNv2 order failed immediately: temporal SC@50 fell from `0.672724` to
+  `0.56794`. A bounded residual blend at `alpha=0.02` improved the earlier
+  half by `+0.001420`, but reduced the later half by `-0.010596` and the full
+  split by `-0.004102`; it was rejected before full fit. Commits `7900010`
+  and `00fcdfe` contain the leakage-safe screen and residual bound;
+- the cached TF-IDF reserve had a top-100 oracle of 23 incremental temporal
+  hits. A rank-50 confidence route improved full temporal SC@50 by
+  `+0.000370`, with request-bootstrap `P(delta>0)=0.8643`, but its 95% CI
+  touched zero. Strict v24/v25 uploads scored private SC@50 `0.6988/0.6987`
+  and Recall@50 `0.5918/0.5917`, so this branch was rejected. Commits
+  `e6487cd` and `e01d64a` contain the route and paired bootstrap tooling;
+- v21 and v22 have complementary private profiles and overlap on an average
+  `48.9409` of 50 temporal candidates. The final deterministic fallback keeps
+  v22 ranks 1--10 unchanged and fills ranks 11--50 by equal-weight RRF-30
+  consensus over the v22 and v21 top-50 lists. It uses no target, query label,
+  learned router, or leaderboard-derived threshold. On the early/late halves,
+  SC@50 changes from `0.733275/0.695424` to `0.733397/0.695613`; Recall@50
+  changes from `0.626286/0.623073` to `0.628000/0.624786`. Full temporal
+  deltas are `+0.000153` SC@50 and `+0.001714` Recall@50, while Recall@10 is
+  exactly unchanged;
+- 10,000-sample paired request bootstrap gives SC@50 `P(delta>0)=0.9978`,
+  95% CI `[0.0000229, 0.0003318]`; user-cluster bootstrap gives
+  `P(delta>0)=0.9970`, 95% CI `[0.0000222, 0.0003521]`. The gain is
+  concentrated in the p0--50 SourceCost stratum (`+0.003851`) with all higher
+  strata unchanged, so no observed stratum regresses;
+- full materialization changes `7,418/10,000` requests and passes strict
+  validation with exactly 10,000 rows, exactly 50 unique valid banners per
+  row, `short_rows=0`, and no errors. VM and local full SHA-256 are
+  `5d50c7ea919876a8bb4370ca0beff90207d753b8009eacf5c0769262a2f0b174`.
+  Commit `b3b3351` contains the materializer and focused tests; the full suite
+  passes `206/206`;
+- leaderboard entry `v26 v21-v22 consensus tail` scores private SC@50
+  `0.6991`, Recall@50 `0.5950`, and Recall@10 `0.4360`. This is a strict
+  `+0.0003` absolute improvement over v22 and retains first place, `0.0149`
+  ahead of the next participant at `0.6842`. Private SC@50 by SourceCost slice
+  is `0.5229/0.5751/0.6266/0.6183/0.6921/0.8197` for
+  p0--25/p25--50/p50--75/p75--90/p90--99/p99--100 respectively.

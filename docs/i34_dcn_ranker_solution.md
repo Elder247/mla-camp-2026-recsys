@@ -69,9 +69,32 @@ without strict validation.
 
 ## Completion criteria
 
-- [ ] train/holdout leakage checks and tests pass;
-- [ ] DCNv2 temporal early/late/full metrics are recorded;
-- [ ] paired request bootstrap and cost-tail sensitivity are recorded;
-- [ ] promoted full output passes exactly 10,000 rows and 50 unique valid IDs;
-- [ ] private SourceCost Recall@50 is strictly above `0.6988`;
-- [ ] documentation, manifests, hashes, timings, and small commits are saved.
+- [x] train/holdout leakage checks and tests pass;
+- [x] DCNv2 temporal early/late/full metrics are recorded; the residual screen
+  failed the later-half gate and was not promoted;
+- [x] paired request bootstrap and cost-tail sensitivity are recorded for the
+  promoted accepted-ranking consensus fallback;
+- [x] promoted full output passes exactly 10,000 rows and 50 unique valid IDs;
+- [x] private SourceCost Recall@50 is strictly above `0.6988` (`0.6991`);
+- [x] documentation, manifests, hashes, timings, and small commits are saved.
+
+## Outcome
+
+The bounded DCNv2 screen was correctly rejected.  Its raw ranking reduced
+full temporal SC@50 from `0.672724` to `0.56794`.  A residual blend with
+`alpha=0.02` improved the earlier half by `+0.001420`, but reduced the later
+half by `-0.010596` and full SC@50 by `-0.004102`; no full fit or upload was
+allowed.
+
+The cached TF-IDF reserve was also not accepted as the final solution.  Its
+rank-50 safety injection was non-negative on both temporal halves, but the
+10,000-request bootstrap CI touched zero and private submissions v24/v25
+scored only `0.6988/0.6987` SC@50.
+
+The successful post-mortem fallback is a deterministic consensus tail over
+the already accepted v22 control and v21 alternate.  It preserves the v22
+top ten exactly and fills ranks 11--50 using equal-weight RRF-30 over the two
+top-50 lists.  It improves temporal SC@50 on both halves, with full paired
+bootstrap `P(delta > 0)=0.9978` and a strictly positive 95% interval.  The
+strict full output was uploaded as `v26 v21-v22 consensus tail` and scored
+private SC@50 `0.6991`, Recall@50 `0.5950`, and Recall@10 `0.4360`.
